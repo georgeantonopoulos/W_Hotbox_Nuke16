@@ -49,6 +49,110 @@ if not qt_imported:
         from PySide6 import QtWidgets, QtGui, QtCore
         from PySide6.QtCore import Qt
         QAction = QtGui.QAction  # In PySide6, QAction is in QtGui
+        
+        # In PySide6, QRegExp is replaced by QRegularExpression
+        from PySide6.QtCore import QRegularExpression
+        
+        # Create a wrapper class to maintain compatibility
+        class QRegExpCompat:
+            def __init__(self, pattern):
+                self.pattern = pattern
+                # Convert the pattern to a QRegularExpression
+                # Using case sensitive and minimal matching by default
+                self.regex = QRegularExpression(pattern)
+                self.matches = None
+                self.match_positions = {}
+                
+            def indexIn(self, text, start=0):
+                self.matches = self.regex.match(text, start)
+                if self.matches.hasMatch():
+                    self.match_positions = {0: self.matches.capturedStart()}
+                    for i in range(1, self.matches.lastCapturedIndex() + 1):
+                        self.match_positions[i] = self.matches.capturedStart(i)
+                    return self.matches.capturedStart()
+                return -1
+                
+            def pos(self, nth):
+                if nth in self.match_positions:
+                    return self.match_positions[nth]
+                return -1
+                
+            def cap(self, nth):
+                if self.matches:
+                    return self.matches.captured(nth)
+                return ""
+                
+            def matchedLength(self):
+                if self.matches and self.matches.hasMatch():
+                    return self.matches.capturedLength()
+                return 0
+        
+        # Replace QRegExp with our compatible version
+        QRegExp = QRegExpCompat
+        
+        # In Qt6, enum flags have been moved to nested classes
+        # Create compatibility variables for Qt enums to make them accessible the Qt5 way
+        
+        # Alignment flags
+        if not hasattr(Qt, 'AlignLeft'):
+            Qt.AlignLeft = Qt.AlignmentFlag.AlignLeft
+            Qt.AlignRight = Qt.AlignmentFlag.AlignRight
+            Qt.AlignCenter = Qt.AlignmentFlag.AlignCenter
+            Qt.AlignTop = Qt.AlignmentFlag.AlignTop
+            Qt.AlignBottom = Qt.AlignmentFlag.AlignBottom
+            Qt.AlignVCenter = Qt.AlignmentFlag.AlignVCenter
+            Qt.AlignHCenter = Qt.AlignmentFlag.AlignHCenter
+        
+        # Mouse buttons
+        if not hasattr(Qt, 'LeftButton'):
+            Qt.LeftButton = Qt.MouseButton.LeftButton
+            Qt.RightButton = Qt.MouseButton.RightButton
+            Qt.MiddleButton = Qt.MouseButton.MiddleButton
+        
+        # Keyboard modifiers
+        if not hasattr(Qt, 'ShiftModifier'):
+            Qt.ShiftModifier = Qt.KeyboardModifier.ShiftModifier
+            Qt.ControlModifier = Qt.KeyboardModifier.ControlModifier
+            Qt.AltModifier = Qt.KeyboardModifier.AltModifier
+        
+        # Window flags
+        if not hasattr(Qt, 'Tool'):
+            Qt.Tool = Qt.WindowType.Tool
+            Qt.FramelessWindowHint = Qt.WindowType.FramelessWindowHint
+            Qt.WindowStaysOnTopHint = Qt.WindowType.WindowStaysOnTopHint
+            Qt.ToolTip = Qt.WindowType.ToolTip
+        
+        # Other Qt attributes
+        if not hasattr(Qt, 'WA_NoSystemBackground'):
+            Qt.WA_NoSystemBackground = Qt.WidgetAttribute.WA_NoSystemBackground
+            Qt.WA_TranslucentBackground = Qt.WidgetAttribute.WA_TranslucentBackground
+            Qt.WA_PaintOnScreen = Qt.WidgetAttribute.WA_PaintOnScreen
+        
+        # Text formats
+        if not hasattr(Qt, 'RichText'):
+            Qt.RichText = Qt.TextFormat.RichText
+            Qt.PlainText = Qt.TextFormat.PlainText
+        
+        # Item flags
+        if not hasattr(Qt, 'ItemIsUserCheckable'):
+            Qt.ItemIsUserCheckable = Qt.ItemFlag.ItemIsUserCheckable
+            Qt.ItemIsSelectable = Qt.ItemFlag.ItemIsSelectable
+            Qt.ItemIsEnabled = Qt.ItemFlag.ItemIsEnabled
+            Qt.MatchExactly = Qt.MatchFlag.MatchExactly
+        
+        # Key constants
+        if not hasattr(Qt, 'Key_Return'):
+            Qt.Key_Return = Qt.Key.Key_Return
+            
+        # Layout direction
+        if not hasattr(Qt, 'RightToLeft'):
+            Qt.RightToLeft = Qt.LayoutDirection.RightToLeft
+            
+        # CheckState
+        if not hasattr(Qt, 'Unchecked'):
+            Qt.Unchecked = Qt.CheckState.Unchecked
+            Qt.Checked = Qt.CheckState.Checked
+            
         qt_imported = True
     except ImportError:
         pass
@@ -60,6 +164,8 @@ if not qt_imported:
             from PySide2 import QtWidgets, QtGui, QtCore
             from PySide2.QtCore import Qt
             QAction = QtWidgets.QAction  # In PySide2, QAction is in QtWidgets
+            # In PySide2, use the native QRegExp
+            QRegExp = QtCore.QRegExp
             qt_imported = True
     except ImportError:
         pass
@@ -71,6 +177,8 @@ if not qt_imported:
         from PySide.QtCore import Qt
         QtWidgets = QtGui  # In PySide, QtWidgets is part of QtGui
         QAction = QtGui.QAction  # In PySide, QAction is in QtGui
+        # In PySide, use the native QRegExp
+        QRegExp = QtCore.QRegExp
         qt_imported = True
     except ImportError:
         pass
@@ -370,12 +478,21 @@ class HotboxManager(QtWidgets.QWidget):
         self.scriptEditorScript.setFont(scriptEditorFont)
         # In PySide6 (Qt6), width() is replaced by horizontalAdvance()
         fontMetrics = QtGui.QFontMetrics(scriptEditorFont)
+        tabStopWidth = 0
         if hasattr(fontMetrics, 'horizontalAdvance'):
             # PySide6
-            self.scriptEditorScript.setTabStopWidth(4 * fontMetrics.horizontalAdvance(' '))
+            tabStopWidth = 4 * fontMetrics.horizontalAdvance(' ')
         else:
             # PySide2 or PySide
-            self.scriptEditorScript.setTabStopWidth(4 * fontMetrics.width(' '))
+            tabStopWidth = 4 * fontMetrics.width(' ')
+            
+        # In PySide6 (Qt6), setTabStopWidth is deprecated in favor of setTabStopDistance
+        if hasattr(self.scriptEditorScript, 'setTabStopDistance'):
+            # PySide6
+            self.scriptEditorScript.setTabStopDistance(tabStopWidth)
+        else:
+            # PySide2 or PySide
+            self.scriptEditorScript.setTabStopWidth(tabStopWidth)
 
         #assemble
         self.scriptEditorLayout.addLayout(self.archiveButtonsLayout)
@@ -2278,8 +2395,8 @@ class ScriptEditorHighlighter(QtGui.QSyntaxHighlighter):
 
         self.numbers = ['True', 'False','None']
 
-        self.tri_single = (QtCore.QRegExp("'''"), 1, self.styles['comment'])
-        self.tri_double = (QtCore.QRegExp('"""'), 2, self.styles['comment'])
+        self.tri_single = (QRegExp("'''"), 1, self.styles['comment'])
+        self.tri_double = (QRegExp('"""'), 2, self.styles['comment'])
 
         self.placeholders = [
             'KNOBNAME','NODECLASS','NODENAME','VALUE','EXPRESSION'
@@ -2306,7 +2423,7 @@ class ScriptEditorHighlighter(QtGui.QSyntaxHighlighter):
             ]
 
         # Build a QRegExp for each pattern
-        self.rules = [(QtCore.QRegExp(pat), index, fmt) for (pat, index, fmt) in rules]
+        self.rules = [(QRegExp(pat), index, fmt) for (pat, index, fmt) in rules]
 
     def format(self,rgb, style=''):
         '''
@@ -2574,7 +2691,9 @@ class QTreeViewCustom(QtWidgets.QTreeView):
 
     def setModel(self, model):
         super(QTreeViewCustom, self).setModel(model)
-        self.connect(self.selectionModel(),QtCore.SIGNAL("selectionChanged(QItemSelection, QItemSelection)"), self.setSelectedItems)
+        # Update to new-style signal/slot connection syntax
+        # Old: self.connect(self.selectionModel(),QtCore.SIGNAL("selectionChanged(QItemSelection, QItemSelection)"), self.setSelectedItems)
+        self.selectionModel().selectionChanged.connect(self.setSelectedItems)
 
     #--------------------------------------------------------------------------------------------------
 

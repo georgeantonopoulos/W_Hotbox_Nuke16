@@ -48,6 +48,36 @@ if not qt_imported:
     try:
         from PySide6 import QtWidgets, QtGui, QtCore
         from PySide6.QtCore import Qt
+        
+        # In Qt6, enum flags have been moved to nested classes
+        # Create compatibility variables for Qt enums to make them accessible the Qt5 way
+        
+        # Alignment flags
+        if not hasattr(Qt, 'AlignLeft'):
+            Qt.AlignLeft = Qt.AlignmentFlag.AlignLeft
+            Qt.AlignRight = Qt.AlignmentFlag.AlignRight
+            Qt.AlignCenter = Qt.AlignmentFlag.AlignCenter
+            Qt.AlignTop = Qt.AlignmentFlag.AlignTop
+            Qt.AlignBottom = Qt.AlignmentFlag.AlignBottom
+            Qt.AlignVCenter = Qt.AlignmentFlag.AlignVCenter
+            Qt.AlignHCenter = Qt.AlignmentFlag.AlignHCenter
+        
+        # Window flags
+        if not hasattr(Qt, 'FramelessWindowHint'):
+            Qt.FramelessWindowHint = Qt.WindowType.FramelessWindowHint
+            Qt.WindowStaysOnTopHint = Qt.WindowType.WindowStaysOnTopHint
+        
+        # Other Qt attributes
+        if not hasattr(Qt, 'WA_NoSystemBackground'):
+            Qt.WA_NoSystemBackground = Qt.WidgetAttribute.WA_NoSystemBackground
+            Qt.WA_TranslucentBackground = Qt.WidgetAttribute.WA_TranslucentBackground
+            Qt.WA_PaintOnScreen = Qt.WidgetAttribute.WA_PaintOnScreen
+        
+        # Text formats
+        if not hasattr(Qt, 'RichText'):
+            Qt.RichText = Qt.TextFormat.RichText
+            Qt.PlainText = Qt.TextFormat.PlainText
+        
         qt_imported = True
     except ImportError:
         pass
@@ -970,8 +1000,6 @@ def addPreferences():
                 "Spacebar can be defined as 'space'. Nuke needs be restarted in order for the changes to take effect.")
 
     addToPreferences(knob, tooltip)
-    global shortcut
-    shortcut = preferencesNode.knob('hotboxShortcut').value()
 
     #reset shortcut knob
     knob = nuke.PyScript_Knob('hotboxResetShortcut','set', 'W_hotbox.resetMenuItems()')

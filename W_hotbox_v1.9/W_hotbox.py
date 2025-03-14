@@ -970,6 +970,8 @@ def addPreferences():
                 "Spacebar can be defined as 'space'. Nuke needs be restarted in order for the changes to take effect.")
 
     addToPreferences(knob, tooltip)
+    global shortcut
+    shortcut = preferencesNode.knob('hotboxShortcut').value()
 
     #reset shortcut knob
     knob = nuke.PyScript_Knob('hotboxResetShortcut','set', 'W_hotbox.resetMenuItems()')

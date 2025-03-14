@@ -48,6 +48,7 @@ if not qt_imported:
     try:
         from PySide6 import QtWidgets, QtGui, QtCore
         from PySide6.QtCore import Qt
+        QAction = QtGui.QAction  # In PySide6, QAction is in QtGui
         qt_imported = True
     except ImportError:
         pass
@@ -58,6 +59,7 @@ if not qt_imported:
         if nuke.NUKE_VERSION_MAJOR >= 11:
             from PySide2 import QtWidgets, QtGui, QtCore
             from PySide2.QtCore import Qt
+            QAction = QtWidgets.QAction  # In PySide2, QAction is in QtWidgets
             qt_imported = True
     except ImportError:
         pass
@@ -68,6 +70,7 @@ if not qt_imported:
         from PySide import QtCore, QtGui
         from PySide.QtCore import Qt
         QtWidgets = QtGui  # In PySide, QtWidgets is part of QtGui
+        QAction = QtGui.QAction  # In PySide, QAction is in QtGui
         qt_imported = True
     except ImportError:
         pass
@@ -2449,7 +2452,7 @@ class ScriptEditorTemplateMenu(QtWidgets.QMenu):
         '''
 
         #create new QAction
-        action = QtWidgets.QAction(parent)
+        action = QAction(parent)
         action.setText(name)
 
         #bind function
@@ -3266,7 +3269,7 @@ class RenameDialog(QtWidgets.QDialog):
         self.setLayout(masterLayout)
 
         #shortcuts
-        self.enterAction = QtWidgets.QAction(self)
+        self.enterAction = QAction(self)
         self.enterAction.setShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Return))
         self.enterAction.triggered.connect(self.renameButtonClicked)
         self.addAction(self.enterAction)

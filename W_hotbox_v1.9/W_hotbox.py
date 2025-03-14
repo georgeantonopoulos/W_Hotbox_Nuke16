@@ -1478,6 +1478,10 @@ homeFolder = os.getenv('HOME').replace('\\','/') + '/.nuke'
 updatePreferences()
 addPreferences()
 
+# Define global shortcut variable
+global shortcut
+shortcut = preferencesNode.knob('hotboxShortcut').value()
+
 #----------------------------------------------------------------------------------------------------------
 
 #make sure the archive folders are present, if not, create them

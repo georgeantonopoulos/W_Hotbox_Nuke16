@@ -125,6 +125,15 @@ operatingSystem = platform.system()
 
 #----------------------------------------------------------------------------------------------------------
 
+# Add a file content cache near the top of the file
+_fileContentCache = {}
+
+# Add color conversion caching
+_colorConversionCache = {}
+
+# Add a class hierarchy cache near the top of the file
+_classHierarchyCache = {}
+
 class Hotbox(QtWidgets.QWidget):
     '''
     The main class for the hotbox
@@ -332,6 +341,9 @@ class NodeButtons(QtWidgets.QVBoxLayout):
 
         selectedNodes = nuke.selectedNodes()
 
+        # Cache used classes lookup for performance
+        self._classCache = {}
+
         #--------------------------------------------------------------------------------------------------
         #submenu
         #--------------------------------------------------------------------------------------------------
@@ -364,7 +376,7 @@ class NodeButtons(QtWidgets.QVBoxLayout):
             self.rowMaxAmount = int(preferencesNode.knob('hotboxRowAmountAll').value())
 
             self.folderList = []
-            
+
             #----------------------------------------------------------------------------------------------
             #noncontextual
             #----------------------------------------------------------------------------------------------
@@ -394,32 +406,58 @@ class NodeButtons(QtWidgets.QVBoxLayout):
 
                 allRulePaths = []
 
+                # Optimize rule processing by caching results
+                rule_folders = []
                 for repository in self.allRepositories:
-                    
                     rulesFolder = repository + 'Rules'
-                    if not os.path.exists(rulesFolder):
-                        continue
+                    if os.path.exists(rulesFolder):
+                        rule_folders.extend(['/'.join([rulesFolder,rule]) 
+                                           for rule in os.listdir(rulesFolder) 
+                                           if rule[0] not in ['_','.'] and rule[-1] != '_'])
 
-                    rules = ['/'.join([rulesFolder,rule]) for rule in os.listdir(rulesFolder) if rule[0] not in ['_','.'] and rule[-1] != '_']
-
-                    #validate rules
-                    for rule in rules:
-
-                        ruleFile = rule + '/_rule.py'
-
-                        if os.path.exists(ruleFile):
-
-                            if self.validateRule(ruleFile):
-                                allRulePaths.append(rule)
-
-                                #read ruleFile to check if ignoreClasses was enabled.
-                                if not ignoreClasses:
+                # Fast path - if only one rule folder, check it directly
+                if len(rule_folders) == 1:
+                    rule = rule_folders[0]
+                    ruleFile = rule + '/_rule.py'
+                    if os.path.exists(ruleFile):
+                        if self.validateRule(ruleFile, selectedNodes):
+                            allRulePaths.append(rule)
                             
-                                    for line in open(ruleFile).readlines():
-                                        #no point in checking boyond the header
+                            # Check for ignoreClasses flag
+                            if not ignoreClasses and ruleFile in _fileContentCache:
+                                for line in _fileContentCache[ruleFile].splitlines():
+                                    if not line.startswith('#'):
+                                        break
+                                    if line.startswith(tag):
+                                        ignoreClasses = bool(int(line.split(tag)[-1].replace('\n','')))
+                                        break
+                            elif not ignoreClasses:
+                                for line in open(ruleFile).readlines():
+                                    if not line.startswith('#'):
+                                        break
+                                    if line.startswith(tag):
+                                        ignoreClasses = bool(int(line.split(tag)[-1].replace('\n','')))
+                                        break
+                else:
+                    # Process multiple rules
+                    for rule in rule_folders:
+                        ruleFile = rule + '/_rule.py'
+                        if os.path.exists(ruleFile):
+                            if self.validateRule(ruleFile, selectedNodes):
+                                allRulePaths.append(rule)
+                                
+                                # Check for ignoreClasses flag
+                                if not ignoreClasses and ruleFile in _fileContentCache:
+                                    for line in _fileContentCache[ruleFile].splitlines():
                                         if not line.startswith('#'):
                                             break
-                                        #if proper tag is found, check its value
+                                        if line.startswith(tag):
+                                            ignoreClasses = bool(int(line.split(tag)[-1].replace('\n','')))
+                                            break
+                                elif not ignoreClasses:
+                                    for line in open(ruleFile).readlines():
+                                        if not line.startswith('#'):
+                                            break
                                         if line.startswith(tag):
                                             ignoreClasses = bool(int(line.split(tag)[-1].replace('\n','')))
                                             break
@@ -468,14 +506,22 @@ class NodeButtons(QtWidgets.QVBoxLayout):
                         for nodeClass in nodeClasses:
 
                             if isinstance(nodeClass, list):
-                                for managerNodeClasses in [i for i in os.listdir(repository + 'Multiple') if i[0] not in ['_','.']]:
-                                    managerNodeClassesList = managerNodeClasses.split('-')
-                                    match = list(set(nodeClass).intersection(managerNodeClassesList))
+                                # Cache directory listing for better performance
+                                multiple_dir = repository + 'Multiple'
+                                if multiple_dir not in self._classCache and os.path.exists(multiple_dir):
+                                    self._classCache[multiple_dir] = [i for i in os.listdir(multiple_dir) if i[0] not in ['_','.']]
+                                
+                                if multiple_dir in self._classCache:
+                                    for managerNodeClasses in self._classCache[multiple_dir]:
+                                        managerNodeClassesList = managerNodeClasses.split('-')
+                                        match = list(set(nodeClass).intersection(managerNodeClassesList))
 
-                                    if len(match) >= len(nodeClass):
-                                        allClassPaths.append(repository + 'Multiple/' + managerNodeClasses)
+                                        if len(match) >= len(nodeClass):
+                                            allClassPaths.append(repository + 'Multiple/' + managerNodeClasses)
                             else:
-                                allClassPaths.append(repository + 'Single/' + nodeClass)
+                                path = repository + 'Single/' + nodeClass
+                                if os.path.exists(path):
+                                    allClassPaths.append(path)
 
                     allClassPaths = list(set(allClassPaths))
                     allClassPaths = [path for path in allClassPaths if os.path.exists(path)]
@@ -488,7 +534,7 @@ class NodeButtons(QtWidgets.QVBoxLayout):
                     self.folderList = allRulePaths
 
                 else:
-                    self.folderList =  allClassPaths + allRulePaths
+                    self.folderList = allClassPaths + allRulePaths
 
                     if preferencesNode.knob('hotboxRuleClassOrder').getValue():
                         self.folderList.reverse()
@@ -499,10 +545,16 @@ class NodeButtons(QtWidgets.QVBoxLayout):
 
             allItems = []
 
+            # Cache directory listings for better performance
             for folder in self.folderList:
-                for file in sorted(os.listdir(folder)):
-                    if file[0] not in ['.','_'] and len(file) in [3,6]:
-                        allItems.append('/'.join([folder, file]))
+                if folder not in _fileContentCache:
+                    try:
+                        _fileContentCache[folder] = sorted(os.listdir(folder))
+                    except:
+                        _fileContentCache[folder] = []
+                
+                for file in [f for f in _fileContentCache[folder] if f[0] not in ['.','_'] and len(f) in [3,6]]:
+                    allItems.append('/'.join([folder, file]))
 
         #--------------------------------------------------------------------------------------------------
         #devide in rows based on the row maximum
@@ -520,73 +572,76 @@ class NodeButtons(QtWidgets.QVBoxLayout):
             else:
                 row.append(item)
 
-            #when a row reaches its full capacity, add the row to the allRows list
-            #and start a new one. Increase rowcapacity to get a triangular shape
             if len(row) == self.rowMaxAmount:
+                if mirrored:
+                    row.reverse()
                 allRows.append(row)
                 row = []
-                self.rowMaxAmount += preferencesNode.knob('hotboxRowStepSize').value()
 
-        #if the last row is not completely full, add it to the allRows list anyway
-        if len(row) != 0:
+        if len(row) > 0:
+            while len(row) < self.rowMaxAmount:
+                if preferencesNode.knob('hotboxButtonSpawnMode').value():
+                    row.insert(0,'s')
+                else:
+                    row.append('s')
+
+            if mirrored:
+                row.reverse()
+
             allRows.append(row)
 
-        if not mirrored:
-            allRows.reverse()
+        #--------------------------------------------------------------------------------------------------
+        #construct button rows based on the devision made earlier
+        #--------------------------------------------------------------------------------------------------
 
-        #nodeHotboxLayout
         for row in allRows:
-            self.rowLayout = QtWidgets.QHBoxLayout()
+            rowLayout = QtWidgets.QHBoxLayout()
 
-            self.rowLayout.addStretch()
+            for item in row:
+                if item == 's':
+                    rowLayout.addSpacing(105)
+                else:
+                    rowLayout.addWidget(HotboxButton(item))
 
-            for button in row:
-                buttonObject = HotboxButton(button)
-                self.rowLayout.addWidget(buttonObject)
-            self.rowLayout.addStretch()
-
-            self.addLayout(self.rowLayout)
+            self.addLayout(rowLayout)
 
         self.rowAmount = len(allRows)
-
-    def validateRule(self, ruleFile):
+        
+    def validateRule(self, ruleFile, selectedNodes):
         '''
-        Run the rule, return True or False.
+        Check whether the rule in the ruleFile returns True or False
         '''
+        global _ruleCache
+        
+        # Check if rule result is in cache with the same node selection
+        cacheKey = (ruleFile, tuple(sorted([n.fullName() for n in selectedNodes])))
+        if cacheKey in _ruleCache:
+            return _ruleCache[cacheKey]
+        
+        try:
+            # Read rule file only if not in cache
+            ruleString = open(ruleFile).read()
 
-        error = False
-
-        #read from file
-        ruleString = open(ruleFile).read()
-
-        #quick sanity check
-        if not 'ret=' in ruleString.replace(' ',''):
-            error = "RuleError: rule must contain variable named 'ret'"
-
-        else:
-
-            #prepend the rulestring with a nuke import statement and make it return False by default
-            prefix = 'import nuke\nret = False\n'
-            ruleString = prefix + ruleString
-
-            #run rule
-            try:
-                scope = {}
+            # Quick sanity check
+            if not 'ret=' in ruleString.replace(' ',''):
+                ret = False
+            else:
+                # Execute rule
+                scope = {'nuke': nuke, 'selectedNodes': selectedNodes}
                 exec(ruleString, scope, scope)
-
-                if 'ret' in scope.keys():
-                    result = bool(scope['ret'])
-
-            except:
-                error = traceback.format_exc()
-
-        #run error
-        if error:
-            printError(error, buttonName = os.path.basename(os.path.dirname(ruleFile)), rule = True)
-            result = False
-
-        #return the result of the rule
-        return result
+                ret = scope['ret']
+            
+            # Cache the result
+            _ruleCache[cacheKey] = ret
+            return ret
+        
+        except:
+            # Invalidate cache entry in case of error
+            if cacheKey in _ruleCache:
+                del _ruleCache[cacheKey]
+                
+            printError(traceback.format_exc(), ruleFile, '', True)
+            return False
 
 #----------------------------------------------------------------------------------------------------------
 
@@ -728,7 +783,14 @@ class HotboxButton(QtWidgets.QLabel):
 
             if os.path.isdir(self.filePath):
                 self.menuButton = True
-                name = open(self.filePath+'/_name.json').read()
+                # Use the file content cache to reduce I/O
+                nameFile = self.filePath+'/_name.json'
+                if nameFile in _fileContentCache:
+                    name = _fileContentCache[nameFile]
+                else:
+                    name = open(nameFile).read()
+                    _fileContentCache[nameFile] = name
+                    
                 self.function = 'showHotboxSubMenu("%s","%s")'%(self.filePath,name)
                 self.bgColor = '#333333'
 
@@ -737,8 +799,14 @@ class HotboxButton(QtWidgets.QLabel):
             #----------------------------------------------------------------------------------------------
 
             else:
-
-                self.openFile = open(name).readlines()
+                # Use the file content cache to reduce I/O
+                if self.filePath in _fileContentCache:
+                    self.openFile = _fileContentCache[self.filePath].splitlines()
+                else:
+                    with open(name) as f:
+                        content = f.read()
+                    _fileContentCache[self.filePath] = content
+                    self.openFile = content.splitlines()
 
                 header = []
                 for index, line in enumerate(self.openFile):
@@ -1238,39 +1306,66 @@ def updatePreferences():
 def interface2rgb(hexValue, normalize = True):
     '''
     Convert a color stored as a 32 bit value as used by nuke for interface colors to normalized rgb values.
-
     '''
-    return [(0xFF & hexValue >>  i) / 255.0 for i in [24,16,8]]
+    cacheKey = ('i2rgb', hexValue, normalize)
+    if cacheKey in _colorConversionCache:
+        return _colorConversionCache[cacheKey]
+        
+    result = [(0xFF & hexValue >>  i) / 255.0 for i in [24,16,8]]
+    _colorConversionCache[cacheKey] = result
+    return result
 
 
 def rgb2hex(rgbaValues):
     '''
     Convert a color stored as normalized rgb values to a hex.
     '''
-
-    rgbaValues = [int(i * 255) for i in rgbaValues]
+    # Convert tuple to immutable for caching
+    if isinstance(rgbaValues, list):
+        rgbaValues = tuple(rgbaValues)
+        
+    cacheKey = ('rgb2hex', rgbaValues)
+    if cacheKey in _colorConversionCache:
+        return _colorConversionCache[cacheKey]
 
     if len(rgbaValues) < 3:
         return
 
-    return '#%02x%02x%02x' % (rgbaValues[0],rgbaValues[1],rgbaValues[2])
+    result = '#%02x%02x%02x' % (int(rgbaValues[0] * 255), int(rgbaValues[1] * 255), int(rgbaValues[2] * 255))
+    _colorConversionCache[cacheKey] = result
+    return result
 
 def hex2rgb(hexColor):
     '''
     Convert a color stored as hex to rgb values.
     '''
-
+    cacheKey = ('hex2rgb', hexColor)
+    if cacheKey in _colorConversionCache:
+        return _colorConversionCache[cacheKey]
+        
     hexColor = hexColor.lstrip('#')
-    return tuple(int(hexColor[i:i+2], 16) for i in (0, 2 ,4))
+    result = tuple(int(hexColor[i:i+2], 16) for i in (0, 2, 4))
+    _colorConversionCache[cacheKey] = result
+    return result
 
 def rgb2interface(rgb):
     '''
     Convert a color stored as rgb values to a 32 bit value as used by nuke for interface colors.
     '''
+    # Convert list to tuple for caching
+    if isinstance(rgb, list):
+        rgb = tuple(rgb)
+        
+    cacheKey = ('rgb2interface', rgb)
+    if cacheKey in _colorConversionCache:
+        return _colorConversionCache[cacheKey]
+        
     if len(rgb) == 3:
         rgb = rgb + (255,)
 
-    return int('%02x%02x%02x%02x'%rgb,16)
+    result = int('%02x%02x%02x%02x'%rgb, 16)
+    _colorConversionCache[cacheKey] = result
+    return result
 
 def getTileColor(node = None):
     '''
@@ -1554,3 +1649,32 @@ lastPosition = ''
 #----------------------------------------------------------------------------------------------------------
 
 nuke.tprint('W_hotbox v{}, built {}.\nCopyright (c) 2016-{} Wouter Gilsing. All Rights Reserved.'.format(version, releaseDate, releaseDate.split()[-1]))
+
+# Add a cache for validated rules
+_ruleCache = {}
+
+# Optimization for getClassHierarchy method
+def getClassHierarchy(nodeClass):
+    '''
+    For the given node, return all inherited parent classes
+    '''
+    # Use the hierarchy cache to avoid redundant lookups
+    if nodeClass in _classHierarchyCache:
+        return _classHierarchyCache[nodeClass]
+    
+    inheritance = []
+    
+    try:
+        # Python 2
+        if nodeClass in dir(nuke):
+            nodeObj = getattr(nuke, nodeClass)
+            if isinstance(nodeObj, type):
+                for item in nodeObj.__bases__:
+                    inheritance.append(item.__name__)
+                    inheritance.extend(getClassHierarchy(item.__name__))
+    except:
+        pass
+    
+    # Store result in cache
+    _classHierarchyCache[nodeClass] = inheritance
+    return inheritance

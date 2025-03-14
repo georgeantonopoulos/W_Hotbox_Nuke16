@@ -56,43 +56,64 @@ if not qt_imported:
         
         # Create a wrapper class to maintain compatibility
         class QRegExpCompat:
+            # Class level cache to avoid recreating regex objects
+            _pattern_cache = {}
+            
             def __init__(self, pattern):
                 self.pattern = pattern
-                # Convert the pattern to a QRegularExpression
-                # Using case sensitive and minimal matching by default
-                self.regex = QRegularExpression(pattern)
+                # Get precompiled regex from cache or create a new one
+                if pattern not in QRegExpCompat._pattern_cache:
+                    QRegExpCompat._pattern_cache[pattern] = QRegularExpression(pattern)
+                self.regex = QRegExpCompat._pattern_cache[pattern]
                 self.matches = None
                 self.match_positions = {}
                 self._last_text = None
                 self._last_start = None
+                self._match_iterator = None
                 
             def indexIn(self, text, start=0):
-                # Cache the text and start position to avoid redundant matching
-                if text != self._last_text or start != self._last_start:
-                    self._last_text = text
-                    self._last_start = start
-                    self.matches = self.regex.match(text, start)
-                    self.match_positions = {}
-                    
-                if self.matches and self.matches.hasMatch():
+                # Fast path for repeated calls with same text and position
+                if text == self._last_text and start == self._last_start and self.matches:
+                    return self.matches.capturedStart() if self.matches.hasMatch() else -1
+                
+                # Store for later comparisons
+                self._last_text = text
+                self._last_start = start
+                
+                # Get match result
+                self.matches = self.regex.match(text, start)
+                self.match_positions = {}
+                
+                # Only process results if we have a match
+                if self.matches.hasMatch():
                     self.match_positions = {0: self.matches.capturedStart()}
-                    for i in range(1, self.matches.lastCapturedIndex() + 1):
-                        self.match_positions[i] = self.matches.capturedStart(i)
+                    # Only process capture groups if needed
+                    last_index = self.matches.lastCapturedIndex()
+                    if last_index > 0:
+                        for i in range(1, last_index + 1):
+                            self.match_positions[i] = self.matches.capturedStart(i)
                     return self.matches.capturedStart()
                 return -1
                 
             def pos(self, nth):
-                if nth in self.match_positions:
-                    return self.match_positions[nth]
-                return -1
+                # Fast path: directly return -1 if nth is not in match_positions
+                if nth not in self.match_positions:
+                    return -1
+                return self.match_positions[nth]
                 
             def cap(self, nth):
-                if self.matches and self.matches.hasMatch():
+                # Fast path: avoid calling hasMatch() if matches is None
+                if not self.matches:
+                    return ""
+                if self.matches.hasMatch():
                     return self.matches.captured(nth)
                 return ""
                 
             def matchedLength(self):
-                if self.matches and self.matches.hasMatch():
+                # Fast path: avoid calling hasMatch() if matches is None
+                if not self.matches:
+                    return 0
+                if self.matches.hasMatch():
                     return self.matches.capturedLength()
                 return 0
         
@@ -2462,15 +2483,32 @@ class ScriptEditorHighlighter(QtGui.QSyntaxHighlighter):
         '''
         # Do other syntax formatting
         for expression, nth, format in self.rules:
+            # Only perform indexIn if text is not empty
+            if not text:
+                continue
+                
+            # Get the first match
             index = expression.indexIn(text, 0)
 
+            # Process all matches
             while index >= 0:
-                # We actually want the index of the nth match
-                index = expression.pos(nth)
+                # Get the position and length of the match
+                pos = expression.pos(nth)
+                if pos < 0:
+                    break
+                    
                 length = len(expression.cap(nth))
-                self.setFormat(index, length, format)
-                # Move to the next match
-                index = expression.indexIn(text, index + length)
+                if length <= 0:
+                    break
+                    
+                # Apply formatting
+                self.setFormat(pos, length, format)
+                
+                # Move to the next match - make sure we advance
+                new_index = expression.indexIn(text, index + max(1, length))
+                if new_index <= index:
+                    break
+                index = new_index
 
         self.setCurrentBlockState(0)
 
@@ -2483,6 +2521,10 @@ class ScriptEditorHighlighter(QtGui.QSyntaxHighlighter):
         '''
         Check whether highlighting requires multiple lines.
         '''
+        # If text is empty, just check if we should continue a multi-line state
+        if not text:
+            return self.previousBlockState() == in_state
+            
         # If inside triple-single quotes, start at 0
         if self.previousBlockState() == in_state:
             start = 0
@@ -2490,8 +2532,14 @@ class ScriptEditorHighlighter(QtGui.QSyntaxHighlighter):
         # Otherwise, look for the delimiter on this line
         else:
             start = delimiter.indexIn(text)
+            # If no delimiter found, return false
+            if start < 0:
+                return False
+                
             # Move past this match
             add = delimiter.matchedLength()
+            if add <= 0:
+                return False
 
         # As long as there's a delimiter match on this line...
         while start >= 0:
@@ -2505,16 +2553,18 @@ class ScriptEditorHighlighter(QtGui.QSyntaxHighlighter):
             else:
                 self.setCurrentBlockState(in_state)
                 length = len(text) - start + add
+                
             # Apply formatting
             self.setFormat(start, length, style)
-            # Look for the next match
-            start = delimiter.indexIn(text, start + length)
+            
+            # Look for the next match - ensure we're advancing
+            new_start = delimiter.indexIn(text, start + max(1, length))
+            if new_start <= start:
+                break
+            start = new_start
 
         # Return True if still inside a multi-line string, False Otherwise
-        if self.currentBlockState() == in_state:
-            return True
-        else:
-            return False
+        return self.currentBlockState() == in_state
 
 #------------------------------------------------------------------------------------------------------
 #Template Button

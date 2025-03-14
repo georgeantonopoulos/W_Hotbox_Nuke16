@@ -2410,8 +2410,8 @@ class ScriptEditorHighlighter(QtGui.QSyntaxHighlighter):
 
         self.numbers = ['True', 'False','None']
 
-        self.tri_single = (QRegularExpression("'''"), 1, self.styles['comment'])
-        self.tri_double = (QRegularExpression('"""'), 2, self.styles['comment'])
+        self.tri_single = (QRegExp("'''"), 1, self.styles['comment'])
+        self.tri_double = (QRegExp('"""'), 2, self.styles['comment'])
 
         self.placeholders = [
             'KNOBNAME','NODECLASS','NODENAME','VALUE','EXPRESSION'
@@ -2438,7 +2438,7 @@ class ScriptEditorHighlighter(QtGui.QSyntaxHighlighter):
             ]
 
         # Build a QRegExp for each pattern
-        self.rules = [(QRegularExpression(pat), index, fmt) for (pat, index, fmt) in rules]
+        self.rules = [(QRegExp(pat), index, fmt) for (pat, index, fmt) in rules]
 
     def format(self,rgb, style=''):
         '''

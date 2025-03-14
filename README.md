@@ -48,4 +48,4 @@ For detailed installation instructions, see the `InstallationGuide.txt` file.
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details. 
+This project is licensed under the BSD 3-Clause License - see the LICENSE file for details. The original work was created by Wouter Gilsing, and this repository contains modifications for Nuke 16 compatibility by George Antonopoulos. 

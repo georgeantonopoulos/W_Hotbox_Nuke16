@@ -63,10 +63,18 @@ if not qt_imported:
                 self.regex = QRegularExpression(pattern)
                 self.matches = None
                 self.match_positions = {}
+                self._last_text = None
+                self._last_start = None
                 
             def indexIn(self, text, start=0):
-                self.matches = self.regex.match(text, start)
-                if self.matches.hasMatch():
+                # Cache the text and start position to avoid redundant matching
+                if text != self._last_text or start != self._last_start:
+                    self._last_text = text
+                    self._last_start = start
+                    self.matches = self.regex.match(text, start)
+                    self.match_positions = {}
+                    
+                if self.matches and self.matches.hasMatch():
                     self.match_positions = {0: self.matches.capturedStart()}
                     for i in range(1, self.matches.lastCapturedIndex() + 1):
                         self.match_positions[i] = self.matches.capturedStart(i)
@@ -79,7 +87,7 @@ if not qt_imported:
                 return -1
                 
             def cap(self, nth):
-                if self.matches:
+                if self.matches and self.matches.hasMatch():
                     return self.matches.captured(nth)
                 return ""
                 
@@ -2454,14 +2462,15 @@ class ScriptEditorHighlighter(QtGui.QSyntaxHighlighter):
         '''
         # Do other syntax formatting
         for expression, nth, format in self.rules:
-            index = expression.match(text).capturedStart()
+            index = expression.indexIn(text, 0)
 
             while index >= 0:
                 # We actually want the index of the nth match
-                index = expression.match(text).capturedStart(nth)
-                length = expression.match(text).capturedLength(nth)
+                index = expression.pos(nth)
+                length = len(expression.cap(nth))
                 self.setFormat(index, length, format)
-                index = expression.match(text).capturedStart(nth)
+                # Move to the next match
+                index = expression.indexIn(text, index + length)
 
         self.setCurrentBlockState(0)
 
@@ -2480,17 +2489,17 @@ class ScriptEditorHighlighter(QtGui.QSyntaxHighlighter):
             add = 0
         # Otherwise, look for the delimiter on this line
         else:
-            start = delimiter.match(text).capturedStart()
+            start = delimiter.indexIn(text)
             # Move past this match
-            add = delimiter.match(text).capturedLength()
+            add = delimiter.matchedLength()
 
         # As long as there's a delimiter match on this line...
         while start >= 0:
             # Look for the ending delimiter
-            end = delimiter.match(text).capturedStart(add)
+            end = delimiter.indexIn(text, start + add)
             # Ending delimiter on this line?
             if end >= add:
-                length = end - start + add + delimiter.match(text).capturedLength(add)
+                length = end - start + add + delimiter.matchedLength()
                 self.setCurrentBlockState(0)
             # No; multi-line string
             else:
@@ -2499,7 +2508,7 @@ class ScriptEditorHighlighter(QtGui.QSyntaxHighlighter):
             # Apply formatting
             self.setFormat(start, length, style)
             # Look for the next match
-            start = delimiter.match(text).capturedStart(add)
+            start = delimiter.indexIn(text, start + length)
 
         # Return True if still inside a multi-line string, False Otherwise
         if self.currentBlockState() == in_state:

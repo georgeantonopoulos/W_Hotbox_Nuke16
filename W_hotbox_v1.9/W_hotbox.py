@@ -326,7 +326,7 @@ class NodeButtons(QtWidgets.QVBoxLayout):
                 mirrored = 1 - mirrored
 
             self.path = preferencesNode.knob('hotboxLocation').value().replace('\\','/')
-            if self.path[-1] != '/':
+            if self.path and self.path[-1] != '/':
                 self.path = self.path + '/'
 
             self.allRepositories = list(set([self.path]+[i[1] for i in extraRepositories]))

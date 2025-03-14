@@ -41,11 +41,6 @@ For detailed installation instructions, see the `InstallationGuide.txt` file.
 - Select a button to execute its associated function
 - Access the Hotbox Manager from the Edit menu or from within the hotbox to create, edit, and organize your buttons
 
-## Credits
-
-- Original creator: Wouter Gilsing
-- Nuke 16 compatibility update: George Antonopoulos
-
 ## License
 
 This project is licensed under the BSD 3-Clause License - see the LICENSE file for details. The original work was created by Wouter Gilsing, and this repository contains modifications for Nuke 16 compatibility by George Antonopoulos. 

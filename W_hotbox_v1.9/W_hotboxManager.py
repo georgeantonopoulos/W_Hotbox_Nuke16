@@ -368,7 +368,14 @@ class HotboxManager(QtWidgets.QWidget):
         scriptEditorFont.setPointSize(preferencesNode.knob('hotboxScriptEditorFontSize').value())
 
         self.scriptEditorScript.setFont(scriptEditorFont)
-        self.scriptEditorScript.setTabStopWidth(4 * QtGui.QFontMetrics(scriptEditorFont).width(' '))
+        # In PySide6 (Qt6), width() is replaced by horizontalAdvance()
+        fontMetrics = QtGui.QFontMetrics(scriptEditorFont)
+        if hasattr(fontMetrics, 'horizontalAdvance'):
+            # PySide6
+            self.scriptEditorScript.setTabStopWidth(4 * fontMetrics.horizontalAdvance(' '))
+        else:
+            # PySide2 or PySide
+            self.scriptEditorScript.setTabStopWidth(4 * fontMetrics.width(' '))
 
         #assemble
         self.scriptEditorLayout.addLayout(self.archiveButtonsLayout)
@@ -1884,7 +1891,14 @@ class ScriptEditorWidget(QtWidgets.QPlainTextEdit):
             maxNum //= 10
             digits += 1
 
-        space = 7 + self.fontMetrics().width('9') * digits
+        # In PySide6 (Qt6), width() is replaced by horizontalAdvance()
+        fontMetrics = self.fontMetrics()
+        if hasattr(fontMetrics, 'horizontalAdvance'):
+            # PySide6
+            space = 7 + fontMetrics.horizontalAdvance('9') * digits
+        else:
+            # PySide2 or PySide
+            space = 7 + fontMetrics.width('9') * digits
         return space
 
     def updateLineNumberAreaWidth(self):

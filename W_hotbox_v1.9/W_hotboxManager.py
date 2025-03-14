@@ -48,6 +48,7 @@ if not qt_imported:
     try:
         from PySide6 import QtWidgets, QtGui, QtCore
         from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QApplication
         QAction = QtGui.QAction  # In PySide6, QAction is in QtGui
         
         # In PySide6, QRegExp is replaced by QRegularExpression
@@ -116,10 +117,10 @@ if not qt_imported:
             Qt.AltModifier = Qt.KeyboardModifier.AltModifier
         
         # Window flags
-        if not hasattr(Qt, 'Tool'):
-            Qt.Tool = Qt.WindowType.Tool
+        if not hasattr(Qt, 'FramelessWindowHint'):
             Qt.FramelessWindowHint = Qt.WindowType.FramelessWindowHint
             Qt.WindowStaysOnTopHint = Qt.WindowType.WindowStaysOnTopHint
+            Qt.Tool = Qt.WindowType.Tool
             Qt.ToolTip = Qt.WindowType.ToolTip
         
         # Other Qt attributes
@@ -127,6 +128,10 @@ if not qt_imported:
             Qt.WA_NoSystemBackground = Qt.WidgetAttribute.WA_NoSystemBackground
             Qt.WA_TranslucentBackground = Qt.WidgetAttribute.WA_TranslucentBackground
             Qt.WA_PaintOnScreen = Qt.WidgetAttribute.WA_PaintOnScreen
+        
+        # Layout direction
+        if not hasattr(Qt, 'RightToLeft'):
+            Qt.RightToLeft = Qt.LayoutDirection.RightToLeft
         
         # Text formats
         if not hasattr(Qt, 'RichText'):
@@ -143,16 +148,12 @@ if not qt_imported:
         # Key constants
         if not hasattr(Qt, 'Key_Return'):
             Qt.Key_Return = Qt.Key.Key_Return
-            
-        # Layout direction
-        if not hasattr(Qt, 'RightToLeft'):
-            Qt.RightToLeft = Qt.LayoutDirection.RightToLeft
-            
+        
         # CheckState
         if not hasattr(Qt, 'Unchecked'):
             Qt.Unchecked = Qt.CheckState.Unchecked
             Qt.Checked = Qt.CheckState.Checked
-            
+        
         qt_imported = True
     except ImportError:
         pass
@@ -163,9 +164,6 @@ if not qt_imported:
         if nuke.NUKE_VERSION_MAJOR >= 11:
             from PySide2 import QtWidgets, QtGui, QtCore
             from PySide2.QtCore import Qt
-            QAction = QtWidgets.QAction  # In PySide2, QAction is in QtWidgets
-            # In PySide2, use the native QRegExp
-            QRegExp = QtCore.QRegExp
             qt_imported = True
     except ImportError:
         pass
@@ -176,9 +174,6 @@ if not qt_imported:
         from PySide import QtCore, QtGui
         from PySide.QtCore import Qt
         QtWidgets = QtGui  # In PySide, QtWidgets is part of QtGui
-        QAction = QtGui.QAction  # In PySide, QAction is in QtGui
-        # In PySide, use the native QRegExp
-        QRegExp = QtCore.QRegExp
         qt_imported = True
     except ImportError:
         pass
@@ -545,7 +540,19 @@ class HotboxManager(QtWidgets.QWidget):
         
         self.adjustSize()
 
-        screenRes = QtWidgets.QDesktopWidget().screenGeometry()
+        # Use QApplication.primaryScreen().geometry() for PySide6 compatibility
+        try:
+            # For PySide6
+            if hasattr(QtWidgets, 'QApplication') and hasattr(QtWidgets.QApplication, 'primaryScreen'):
+                screenRes = QtWidgets.QApplication.primaryScreen().geometry()
+            # For PySide2 and PySide
+            else:
+                screenRes = QtWidgets.QDesktopWidget().screenGeometry()
+        except Exception as e:
+            print(f"Error getting screen geometry: {e}")
+            # Use default values if all fails
+            screenRes = QtCore.QRect(0, 0, 1920, 1080)
+            
         self.move(QtCore.QPoint(screenRes.width()//2,screenRes.height()//2)-QtCore.QPoint((self.width()//2),(self.height()//2)))
 
         #--------------------------------------------------------------------------------------------------
@@ -2395,8 +2402,8 @@ class ScriptEditorHighlighter(QtGui.QSyntaxHighlighter):
 
         self.numbers = ['True', 'False','None']
 
-        self.tri_single = (QRegExp("'''"), 1, self.styles['comment'])
-        self.tri_double = (QRegExp('"""'), 2, self.styles['comment'])
+        self.tri_single = (QRegularExpression("'''"), 1, self.styles['comment'])
+        self.tri_double = (QRegularExpression('"""'), 2, self.styles['comment'])
 
         self.placeholders = [
             'KNOBNAME','NODECLASS','NODENAME','VALUE','EXPRESSION'
@@ -2423,7 +2430,7 @@ class ScriptEditorHighlighter(QtGui.QSyntaxHighlighter):
             ]
 
         # Build a QRegExp for each pattern
-        self.rules = [(QRegExp(pat), index, fmt) for (pat, index, fmt) in rules]
+        self.rules = [(QRegularExpression(pat), index, fmt) for (pat, index, fmt) in rules]
 
     def format(self,rgb, style=''):
         '''
@@ -2447,14 +2454,14 @@ class ScriptEditorHighlighter(QtGui.QSyntaxHighlighter):
         '''
         # Do other syntax formatting
         for expression, nth, format in self.rules:
-            index = expression.indexIn(text, 0)
+            index = expression.match(text).capturedStart()
 
             while index >= 0:
                 # We actually want the index of the nth match
-                index = expression.pos(nth)
-                length = len(expression.cap(nth))
+                index = expression.match(text).capturedStart(nth)
+                length = expression.match(text).capturedLength(nth)
                 self.setFormat(index, length, format)
-                index = expression.indexIn(text, index + length)
+                index = expression.match(text).capturedStart(nth)
 
         self.setCurrentBlockState(0)
 
@@ -2473,17 +2480,17 @@ class ScriptEditorHighlighter(QtGui.QSyntaxHighlighter):
             add = 0
         # Otherwise, look for the delimiter on this line
         else:
-            start = delimiter.indexIn(text)
+            start = delimiter.match(text).capturedStart()
             # Move past this match
-            add = delimiter.matchedLength()
+            add = delimiter.match(text).capturedLength()
 
         # As long as there's a delimiter match on this line...
         while start >= 0:
             # Look for the ending delimiter
-            end = delimiter.indexIn(text, start + add)
+            end = delimiter.match(text).capturedStart(add)
             # Ending delimiter on this line?
             if end >= add:
-                length = end - start + add + delimiter.matchedLength()
+                length = end - start + add + delimiter.match(text).capturedLength(add)
                 self.setCurrentBlockState(0)
             # No; multi-line string
             else:
@@ -2492,7 +2499,7 @@ class ScriptEditorHighlighter(QtGui.QSyntaxHighlighter):
             # Apply formatting
             self.setFormat(start, length, style)
             # Look for the next match
-            start = delimiter.indexIn(text, start + length)
+            start = delimiter.match(text).capturedStart(add)
 
         # Return True if still inside a multi-line string, False Otherwise
         if self.currentBlockState() == in_state:
@@ -3409,7 +3416,20 @@ class RenameDialog(QtWidgets.QDialog):
 
         #move to screen center
         self.adjustSize()
-        screenRes = QtWidgets.QDesktopWidget().screenGeometry()
+        
+        # Use QApplication.primaryScreen().geometry() for PySide6 compatibility
+        try:
+            # For PySide6
+            if hasattr(QtWidgets, 'QApplication') and hasattr(QtWidgets.QApplication, 'primaryScreen'):
+                screenRes = QtWidgets.QApplication.primaryScreen().geometry()
+            # For PySide2 and PySide
+            else:
+                screenRes = QtWidgets.QDesktopWidget().screenGeometry()
+        except Exception as e:
+            print(f"Error getting screen geometry: {e}")
+            # Use default values if all fails
+            screenRes = QtCore.QRect(0, 0, 1920, 1080)
+            
         self.move(QtCore.QPoint(screenRes.width() // 2, screenRes.height() // 2) - QtCore.QPoint((self.width() // 2), (self.height() // 2)))
 
     def validateName(self):
@@ -3533,7 +3553,20 @@ class AboutDialog(QtWidgets.QFrame):
 
         #move to screen center
         self.adjustSize()
-        screenRes = QtWidgets.QDesktopWidget().screenGeometry()
+        
+        # Use QApplication.primaryScreen().geometry() for PySide6 compatibility
+        try:
+            # For PySide6
+            if hasattr(QtWidgets, 'QApplication') and hasattr(QtWidgets.QApplication, 'primaryScreen'):
+                screenRes = QtWidgets.QApplication.primaryScreen().geometry()
+            # For PySide2 and PySide
+            else:
+                screenRes = QtWidgets.QDesktopWidget().screenGeometry()
+        except Exception as e:
+            print(f"Error getting screen geometry: {e}")
+            # Use default values if all fails
+            screenRes = QtCore.QRect(0, 0, 1920, 1080)
+            
         self.move(QtCore.QPoint(screenRes.width() // 2,screenRes.height() // 2)-QtCore.QPoint((self.width() // 2),(self.height() // 2)))
 
     def mouseReleaseEvent(self,event):
@@ -3881,3 +3914,17 @@ def showHotboxManager(path = ''):
 
     hotboxManagerInstance = HotboxManager(path)
     hotboxManagerInstance.show()
+
+# Function to get screen geometry compatible with PySide6, PySide2, and PySide
+def getScreenGeometry():
+    try:
+        # For PySide6
+        if hasattr(QtWidgets, 'QApplication') and hasattr(QtWidgets.QApplication, 'primaryScreen'):
+            return QtWidgets.QApplication.primaryScreen().geometry()
+        # For PySide2 and PySide
+        else:
+            return QtWidgets.QDesktopWidget().screenGeometry()
+    except Exception as e:
+        print(f"Error getting screen geometry: {e}")
+        # Return a sensible default if all methods fail
+        return QtCore.QRect(0, 0, 1920, 1080)

@@ -121,10 +121,11 @@ dmypy.json
 .vscode/
 .idea/ 
 
-# W_hotbox_v2.0
+# Project specific
 /W_hotbox_v2.0/
 W_hotbox_v2.0/
-
-# Diff files
 diff_hotbox.txt
 diff_manager.txt
+
+# Note: .cursor-rules is intentionally NOT ignored as it contains 
+# important development guidelines for the project

@@ -1,0 +1,70 @@
+# W_Hotbox Nuke Development Rules
+# These rules are based on lessons learned during the PySide6/Nuke16 compatibility update
+
+# 1. Qt Version Compatibility
+- Always use version-based imports rather than try-except chains for Qt modules
+- Follow the official pattern:
+  if nuke.NUKE_VERSION_MAJOR < 11:
+      from PySide import QtCore, QtGui, QtGui as QtWidgets
+  elif nuke.NUKE_VERSION_MAJOR < 16:
+      from PySide2 import QtGui, QtCore, QtWidgets
+  else:
+      from PySide6 import QtGui, QtCore, QtWidgets
+
+# 2. Qt6 API Changes
+- QRegExp is replaced by QRegularExpression in Qt6
+- Never use indexIn() method directly in Qt6 code
+- Always wrap QRegularExpression usage in version checks:
+  if PYSIDE > 2:
+      match = regex.match(text)
+      if match.hasMatch():
+          start = match.capturedStart()
+  else:
+      start = regex.indexIn(text)
+
+# 3. Defensive Programming
+- Always check for empty strings before accessing indices
+  BAD:  if path[-1] != '/'
+  GOOD: if path and path[-1] != '/'
+
+# 4. Path Handling
+- Always normalize paths with replace('\\', '/')
+- Always check path existence before access
+- Add trailing slash checks with proper empty string handling
+
+# 5. Variable Definitions
+- Define global variables at module level
+- Initialize variables before any possible usage
+- Document variable scope and purpose
+
+# 6. Performance Considerations
+- Use caching only when proven necessary
+- Document cache invalidation strategies
+- Keep cache implementations simple and maintainable
+
+# 7. Code Organization
+- Keep Qt import handling at the top of files
+- Group related functionality together
+- Maintain consistent style with original codebase
+
+# 8. Testing Requirements
+- Test with empty paths and preferences
+- Test with both PySide2 and PySide6
+- Verify Qt enum access patterns in PySide6
+- Test regex functionality across Qt versions
+
+# 9. Documentation
+- Document version compatibility requirements
+- Note Qt-specific behavior changes
+- Explain workarounds and their purpose
+
+# 10. Version Control
+- Keep official versions separate from modifications
+- Document all bug fixes and their rationale
+- Maintain clear commit messages
+
+# Remember:
+- Simpler solutions are often better
+- Follow the official developer's patterns when possible
+- Don't overcomplicate version checking
+- Always test edge cases 

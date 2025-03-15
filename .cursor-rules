@@ -1,6 +1,11 @@
 # W_Hotbox Nuke Development Rules
 # These rules are based on lessons learned during the PySide6/Nuke16 compatibility update
 
+If you are not 300000% sure about your library calls or implementation in Nuke or Pyside, ALWAYS use @Web search to verify before doing changes.
+DO MINIMAL CHANGES ALWAYS
+Don't chat too much, explain things simply in bullet lists, and list your changes.
+
+
 # 1. Qt Version Compatibility
 - Always use version-based imports rather than try-except chains for Qt modules
 - Follow the official pattern:

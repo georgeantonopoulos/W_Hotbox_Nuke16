@@ -40,84 +40,45 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import nuke
 
-#Choose between PySide, PySide2, and PySide6 based on Nuke version
-qt_imported = False
-
-# First try PySide6 (used in Nuke 16+)
-if not qt_imported:
-    try:
-        from PySide6 import QtWidgets, QtGui, QtCore
-        from PySide6.QtCore import Qt
-        
-        # In Qt6, enum flags have been moved to nested classes
-        # Create compatibility variables for Qt enums to make them accessible the Qt5 way
-        
-        # Alignment flags
-        if not hasattr(Qt, 'AlignLeft'):
-            Qt.AlignLeft = Qt.AlignmentFlag.AlignLeft
-            Qt.AlignRight = Qt.AlignmentFlag.AlignRight
-            Qt.AlignCenter = Qt.AlignmentFlag.AlignCenter
-            Qt.AlignTop = Qt.AlignmentFlag.AlignTop
-            Qt.AlignBottom = Qt.AlignmentFlag.AlignBottom
-            Qt.AlignVCenter = Qt.AlignmentFlag.AlignVCenter
-            Qt.AlignHCenter = Qt.AlignmentFlag.AlignHCenter
-        
-        # Window flags
-        if not hasattr(Qt, 'FramelessWindowHint'):
-            Qt.FramelessWindowHint = Qt.WindowType.FramelessWindowHint
-            Qt.WindowStaysOnTopHint = Qt.WindowType.WindowStaysOnTopHint
-        
-        # Other Qt attributes
-        if not hasattr(Qt, 'WA_NoSystemBackground'):
-            Qt.WA_NoSystemBackground = Qt.WidgetAttribute.WA_NoSystemBackground
-            Qt.WA_TranslucentBackground = Qt.WidgetAttribute.WA_TranslucentBackground
-            Qt.WA_PaintOnScreen = Qt.WidgetAttribute.WA_PaintOnScreen
-        
-        # Text formats
-        if not hasattr(Qt, 'RichText'):
-            Qt.RichText = Qt.TextFormat.RichText
-            Qt.PlainText = Qt.TextFormat.PlainText
-        
-        qt_imported = True
-    except ImportError:
-        pass
-
-# Try PySide2 (used in Nuke 11-15)
-if not qt_imported:
-    try:
-        if nuke.NUKE_VERSION_MAJOR >= 11:
-            from PySide2 import QtWidgets, QtGui, QtCore
-            from PySide2.QtCore import Qt
-            qt_imported = True
-    except ImportError:
-        pass
-
-# Try PySide (used in Nuke 10 and earlier)
-if not qt_imported:
-    try:
-        from PySide import QtCore, QtGui
-        from PySide.QtCore import Qt
-        QtWidgets = QtGui  # In PySide, QtWidgets is part of QtGui
-        qt_imported = True
-    except ImportError:
-        pass
-
-# If all else fails, raise a more informative error
-if not qt_imported:
-    error_msg = (
-        "Could not import any Qt modules (PySide6, PySide2, PySide).\n"
-        "Nuke 16+ uses PySide6, Nuke 11-15 uses PySide2, and Nuke 10 and earlier uses PySide.\n"
-        "Please ensure the appropriate Qt module is available in your Nuke environment."
-    )
-    raise ImportError(error_msg)
+#Choose between PySide, PySide2 and PySide6 based on Nuke version
+if nuke.NUKE_VERSION_MAJOR < 11:
+    from PySide import QtCore, QtGui, QtGui as QtWidgets
+    from PySide.QtCore import Qt
+elif nuke.NUKE_VERSION_MAJOR < 16:
+    from PySide2 import QtWidgets, QtGui, QtCore
+    from PySide2.QtCore import Qt
+else:
+    from PySide6 import QtWidgets, QtGui, QtCore
+    from PySide6.QtCore import Qt
+    # In Qt6, enum flags have been moved to nested classes
+    # Create compatibility variables for Qt enums to make them accessible the Qt5 way
+    if not hasattr(Qt, 'AlignLeft'):
+        Qt.AlignLeft = Qt.AlignmentFlag.AlignLeft
+        Qt.AlignRight = Qt.AlignmentFlag.AlignRight
+        Qt.AlignCenter = Qt.AlignmentFlag.AlignCenter
+        Qt.AlignTop = Qt.AlignmentFlag.AlignTop
+        Qt.AlignBottom = Qt.AlignmentFlag.AlignBottom
+        Qt.AlignVCenter = Qt.AlignmentFlag.AlignVCenter
+        Qt.AlignHCenter = Qt.AlignmentFlag.AlignHCenter
+    
+    if not hasattr(Qt, 'FramelessWindowHint'):
+        Qt.FramelessWindowHint = Qt.WindowType.FramelessWindowHint
+        Qt.WindowStaysOnTopHint = Qt.WindowType.WindowStaysOnTopHint
+    
+    if not hasattr(Qt, 'WA_NoSystemBackground'):
+        Qt.WA_NoSystemBackground = Qt.WidgetAttribute.WA_NoSystemBackground
+        Qt.WA_TranslucentBackground = Qt.WidgetAttribute.WA_TranslucentBackground
+        Qt.WA_PaintOnScreen = Qt.WidgetAttribute.WA_PaintOnScreen
+    
+    if not hasattr(Qt, 'RichText'):
+        Qt.RichText = Qt.TextFormat.RichText
+        Qt.PlainText = Qt.TextFormat.PlainText
 
 import os
 import subprocess
 import platform
-
 import traceback
 import colorsys
-
 import W_hotboxManager
 
 preferencesNode = nuke.toNode('preferences')
@@ -125,14 +86,11 @@ operatingSystem = platform.system()
 
 #----------------------------------------------------------------------------------------------------------
 
-# Add a file content cache near the top of the file
+# Performance optimization caches
 _fileContentCache = {}
-
-# Add color conversion caching
 _colorConversionCache = {}
-
-# Add a class hierarchy cache near the top of the file
 _classHierarchyCache = {}
+_ruleValidationCache = {}  # New cache for rule validation results
 
 class Hotbox(QtWidgets.QWidget):
     '''
@@ -611,12 +569,12 @@ class NodeButtons(QtWidgets.QVBoxLayout):
         '''
         Check whether the rule in the ruleFile returns True or False
         '''
-        global _ruleCache
+        global _ruleValidationCache
         
         # Check if rule result is in cache with the same node selection
         cacheKey = (ruleFile, tuple(sorted([n.fullName() for n in selectedNodes])))
-        if cacheKey in _ruleCache:
-            return _ruleCache[cacheKey]
+        if cacheKey in _ruleValidationCache:
+            return _ruleValidationCache[cacheKey]
         
         try:
             # Read rule file only if not in cache
@@ -632,13 +590,13 @@ class NodeButtons(QtWidgets.QVBoxLayout):
                 ret = scope['ret']
             
             # Cache the result
-            _ruleCache[cacheKey] = ret
+            _ruleValidationCache[cacheKey] = ret
             return ret
         
         except:
             # Invalidate cache entry in case of error
-            if cacheKey in _ruleCache:
-                del _ruleCache[cacheKey]
+            if cacheKey in _ruleValidationCache:
+                del _ruleValidationCache[cacheKey]
                 
             printError(traceback.format_exc(), ruleFile, '', True)
             return False
@@ -1651,7 +1609,7 @@ lastPosition = ''
 nuke.tprint('W_hotbox v{}, built {}.\nCopyright (c) 2016-{} Wouter Gilsing. All Rights Reserved.'.format(version, releaseDate, releaseDate.split()[-1]))
 
 # Add a cache for validated rules
-_ruleCache = {}
+_ruleValidationCache = {}
 
 # Optimization for getClassHierarchy method
 def getClassHierarchy(nodeClass):

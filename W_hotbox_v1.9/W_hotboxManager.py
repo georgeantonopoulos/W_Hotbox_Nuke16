@@ -40,185 +40,116 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import nuke
 
-#Choose between PySide, PySide2, and PySide6 based on Nuke version
-qt_imported = False
-
-# First try PySide6 (used in Nuke 16+)
-if not qt_imported:
-    try:
-        from PySide6 import QtWidgets, QtGui, QtCore
-        from PySide6.QtCore import Qt
-        from PySide6.QtWidgets import QApplication
-        QAction = QtGui.QAction  # In PySide6, QAction is in QtGui
+#Choose between PySide, PySide2 and PySide6 based on Nuke version
+if nuke.NUKE_VERSION_MAJOR < 11:
+    from PySide import QtCore, QtGui, QtGui as QtWidgets
+    from PySide.QtCore import Qt
+    QAction = QtGui.QAction
+    QRegExp = QtCore.QRegExp
+elif nuke.NUKE_VERSION_MAJOR < 16:
+    from PySide2 import QtWidgets, QtGui, QtCore
+    from PySide2.QtCore import Qt
+    QAction = QtWidgets.QAction
+    QRegExp = QtCore.QRegExp
+else:
+    from PySide6 import QtWidgets, QtGui, QtCore
+    from PySide6.QtCore import Qt
+    QAction = QtGui.QAction
+    
+    # In PySide6, QRegExp is replaced by QRegularExpression
+    from PySide6.QtCore import QRegularExpression
+    
+    # Create a wrapper class to maintain compatibility
+    class QRegExpCompat:
+        # Class level cache to avoid recreating regex objects
+        _pattern_cache = {}
         
-        # In PySide6, QRegExp is replaced by QRegularExpression
-        from PySide6.QtCore import QRegularExpression
-        
-        # Create a wrapper class to maintain compatibility
-        class QRegExpCompat:
-            # Class level cache to avoid recreating regex objects
-            _pattern_cache = {}
+        def __init__(self, pattern):
+            self.pattern = pattern
+            # Get precompiled regex from cache or create a new one
+            if pattern not in QRegExpCompat._pattern_cache:
+                QRegExpCompat._pattern_cache[pattern] = QRegularExpression(pattern)
+            self.regex = QRegExpCompat._pattern_cache[pattern]
+            self.matches = None
+            self.match_positions = {}
+            self._last_text = None
+            self._last_start = None
+            self._match_iterator = None
             
-            def __init__(self, pattern):
-                self.pattern = pattern
-                # Get precompiled regex from cache or create a new one
-                if pattern not in QRegExpCompat._pattern_cache:
-                    QRegExpCompat._pattern_cache[pattern] = QRegularExpression(pattern)
-                self.regex = QRegExpCompat._pattern_cache[pattern]
-                self.matches = None
-                self.match_positions = {}
-                self._last_text = None
-                self._last_start = None
-                self._match_iterator = None
-                
-            def indexIn(self, text, start=0):
-                # Fast path for repeated calls with same text and position
-                if text == self._last_text and start == self._last_start and self.matches:
-                    return self.matches.capturedStart() if self.matches.hasMatch() else -1
-                
-                # Store for later comparisons
-                self._last_text = text
-                self._last_start = start
-                
-                # Get match result
-                self.matches = self.regex.match(text, start)
-                self.match_positions = {}
-                
-                # Only process results if we have a match
-                if self.matches.hasMatch():
-                    self.match_positions = {0: self.matches.capturedStart()}
-                    # Only process capture groups if needed
-                    last_index = self.matches.lastCapturedIndex()
-                    if last_index > 0:
-                        for i in range(1, last_index + 1):
-                            self.match_positions[i] = self.matches.capturedStart(i)
-                    return self.matches.capturedStart()
+        def indexIn(self, text, start=0):
+            # Fast path for repeated calls with same text and position
+            if text == self._last_text and start == self._last_start and self.matches:
+                return self.matches.capturedStart() if self.matches.hasMatch() else -1
+            
+            # Store for later comparisons
+            self._last_text = text
+            self._last_start = start
+            
+            # Get match result
+            self.matches = self.regex.match(text, start)
+            self.match_positions = {}
+            
+            # Only process results if we have a match
+            if self.matches.hasMatch():
+                self.match_positions = {0: self.matches.capturedStart()}
+                # Only process capture groups if needed
+                last_index = self.matches.lastCapturedIndex()
+                if last_index > 0:
+                    for i in range(1, last_index + 1):
+                        self.match_positions[i] = self.matches.capturedStart(i)
+                return self.matches.capturedStart()
+            return -1
+            
+        def pos(self, nth):
+            # Fast path: directly return -1 if nth is not in match_positions
+            if nth not in self.match_positions:
                 return -1
-                
-            def pos(self, nth):
-                # Fast path: directly return -1 if nth is not in match_positions
-                if nth not in self.match_positions:
-                    return -1
-                return self.match_positions[nth]
-                
-            def cap(self, nth):
-                # Fast path: avoid calling hasMatch() if matches is None
-                if not self.matches:
-                    return ""
-                if self.matches.hasMatch():
-                    return self.matches.captured(nth)
+            return self.match_positions[nth]
+            
+        def cap(self, nth):
+            # Fast path: avoid calling hasMatch() if matches is None
+            if not self.matches:
                 return ""
-                
-            def matchedLength(self):
-                # Fast path: avoid calling hasMatch() if matches is None
-                if not self.matches:
-                    return 0
-                if self.matches.hasMatch():
-                    return self.matches.capturedLength()
+            if self.matches.hasMatch():
+                return self.matches.captured(nth)
+            return ""
+            
+        def matchedLength(self):
+            # Fast path: avoid calling hasMatch() if matches is None
+            if not self.matches:
                 return 0
-        
-        # Replace QRegExp with our compatible version
-        QRegExp = QRegExpCompat
-        
-        # In Qt6, enum flags have been moved to nested classes
-        # Create compatibility variables for Qt enums to make them accessible the Qt5 way
-        
-        # Alignment flags
-        if not hasattr(Qt, 'AlignLeft'):
-            Qt.AlignLeft = Qt.AlignmentFlag.AlignLeft
-            Qt.AlignRight = Qt.AlignmentFlag.AlignRight
-            Qt.AlignCenter = Qt.AlignmentFlag.AlignCenter
-            Qt.AlignTop = Qt.AlignmentFlag.AlignTop
-            Qt.AlignBottom = Qt.AlignmentFlag.AlignBottom
-            Qt.AlignVCenter = Qt.AlignmentFlag.AlignVCenter
-            Qt.AlignHCenter = Qt.AlignmentFlag.AlignHCenter
-        
-        # Mouse buttons
-        if not hasattr(Qt, 'LeftButton'):
-            Qt.LeftButton = Qt.MouseButton.LeftButton
-            Qt.RightButton = Qt.MouseButton.RightButton
-            Qt.MiddleButton = Qt.MouseButton.MiddleButton
-        
-        # Keyboard modifiers
-        if not hasattr(Qt, 'ShiftModifier'):
-            Qt.ShiftModifier = Qt.KeyboardModifier.ShiftModifier
-            Qt.ControlModifier = Qt.KeyboardModifier.ControlModifier
-            Qt.AltModifier = Qt.KeyboardModifier.AltModifier
-        
-        # Window flags
-        if not hasattr(Qt, 'FramelessWindowHint'):
-            Qt.FramelessWindowHint = Qt.WindowType.FramelessWindowHint
-            Qt.WindowStaysOnTopHint = Qt.WindowType.WindowStaysOnTopHint
-            Qt.Tool = Qt.WindowType.Tool
-            Qt.ToolTip = Qt.WindowType.ToolTip
-        
-        # Other Qt attributes
-        if not hasattr(Qt, 'WA_NoSystemBackground'):
-            Qt.WA_NoSystemBackground = Qt.WidgetAttribute.WA_NoSystemBackground
-            Qt.WA_TranslucentBackground = Qt.WidgetAttribute.WA_TranslucentBackground
-            Qt.WA_PaintOnScreen = Qt.WidgetAttribute.WA_PaintOnScreen
-        
-        # Layout direction
-        if not hasattr(Qt, 'RightToLeft'):
-            Qt.RightToLeft = Qt.LayoutDirection.RightToLeft
-        
-        # Text formats
-        if not hasattr(Qt, 'RichText'):
-            Qt.RichText = Qt.TextFormat.RichText
-            Qt.PlainText = Qt.TextFormat.PlainText
-        
-        # Item flags
-        if not hasattr(Qt, 'ItemIsUserCheckable'):
-            Qt.ItemIsUserCheckable = Qt.ItemFlag.ItemIsUserCheckable
-            Qt.ItemIsSelectable = Qt.ItemFlag.ItemIsSelectable
-            Qt.ItemIsEnabled = Qt.ItemFlag.ItemIsEnabled
-            Qt.MatchExactly = Qt.MatchFlag.MatchExactly
-        
-        # Key constants
-        if not hasattr(Qt, 'Key_Return'):
-            Qt.Key_Return = Qt.Key.Key_Return
-        
-        # CheckState
-        if not hasattr(Qt, 'Unchecked'):
-            Qt.Unchecked = Qt.CheckState.Unchecked
-            Qt.Checked = Qt.CheckState.Checked
-        
-        qt_imported = True
-    except ImportError:
-        pass
-
-# Try PySide2 (used in Nuke 11-15)
-if not qt_imported:
-    try:
-        if nuke.NUKE_VERSION_MAJOR >= 11:
-            from PySide2 import QtWidgets, QtGui, QtCore
-            from PySide2.QtCore import Qt
-            qt_imported = True
-    except ImportError:
-        pass
-
-# Try PySide (used in Nuke 10 and earlier)
-if not qt_imported:
-    try:
-        from PySide import QtCore, QtGui
-        from PySide.QtCore import Qt
-        QtWidgets = QtGui  # In PySide, QtWidgets is part of QtGui
-        qt_imported = True
-    except ImportError:
-        pass
-
-# If all else fails, raise a more informative error
-if not qt_imported:
-    error_msg = (
-        "Could not import any Qt modules (PySide6, PySide2, PySide).\n"
-        "Nuke 16+ uses PySide6, Nuke 11-15 uses PySide2, and Nuke 10 and earlier uses PySide.\n"
-        "Please ensure the appropriate Qt module is available in your Nuke environment."
-    )
-    raise ImportError(error_msg)
+            if self.matches.hasMatch():
+                return self.matches.capturedLength()
+            return 0
+    
+    # Replace QRegExp with our compatible version
+    QRegExp = QRegExpCompat
+    
+    # Qt6 compatibility - using a more concise approach for enum flags
+    qt_enums = {
+        'AlignmentFlag': ['AlignLeft', 'AlignRight', 'AlignCenter', 'AlignTop', 'AlignBottom', 'AlignVCenter', 'AlignHCenter'],
+        'MouseButton': ['LeftButton', 'RightButton', 'MiddleButton'],
+        'KeyboardModifier': ['ShiftModifier', 'ControlModifier', 'AltModifier'],
+        'WindowType': ['FramelessWindowHint', 'WindowStaysOnTopHint', 'Tool', 'ToolTip'],
+        'WidgetAttribute': ['WA_NoSystemBackground', 'WA_TranslucentBackground', 'WA_PaintOnScreen'],
+        'LayoutDirection': ['RightToLeft'],
+        'TextFormat': ['RichText', 'PlainText'],
+        'ItemFlag': ['ItemIsUserCheckable', 'ItemIsSelectable', 'ItemIsEnabled'],
+        'MatchFlag': ['MatchExactly'],
+        'Key': ['Key_Return'],
+        'CheckState': ['Unchecked', 'Checked']
+    }
+    
+    # Apply all enum compatibility flags
+    for enum_class, flags in qt_enums.items():
+        enum_obj = getattr(Qt, enum_class, None)
+        if enum_obj:
+            for flag in flags:
+                if not hasattr(Qt, flag):
+                    setattr(Qt, flag, getattr(enum_obj, flag))
 
 import os
 import shutil
-
 import re
 import string
 import colorsys
@@ -232,6 +163,81 @@ from webbrowser import open as openURL
 import W_hotbox
 
 preferencesNode = nuke.toNode('preferences')
+
+#----------------------------------------------------------------------------------------------------------
+# Performance optimization caches
+_managerCache = {
+    'file_content': {},  # Cache file contents
+    'dir_listing': {},   # Cache directory listings
+    'regex': {},         # Cache compiled regex patterns
+    'color': {},         # Cache color conversions
+    'template': {}       # Cache template contents
+}
+
+def clearManagerCache(cache_type=None):
+    """Clear specific or all manager caches"""
+    global _managerCache
+    if cache_type:
+        if cache_type in _managerCache:
+            _managerCache[cache_type].clear()
+    else:
+        for cache in _managerCache.values():
+            cache.clear()
+
+def readFileWithCache(filepath):
+    """Read file content with caching"""
+    if filepath in _managerCache['file_content']:
+        return _managerCache['file_content'][filepath]
+    try:
+        with open(filepath, 'r') as f:
+            content = f.read()
+        _managerCache['file_content'][filepath] = content
+        return content
+    except:
+        return None
+
+def listDirWithCache(dirpath):
+    """List directory contents with caching"""
+    if dirpath in _managerCache['dir_listing']:
+        return _managerCache['dir_listing'][dirpath]
+    try:
+        contents = sorted(os.listdir(dirpath))
+        _managerCache['dir_listing'][dirpath] = contents
+        return contents
+    except:
+        return []
+
+def loadTemplateWithCache(template_name, template_location):
+    """Load template with caching"""
+    cache_key = template_location + template_name
+    if cache_key in _managerCache['template']:
+        return _managerCache['template'][cache_key]
+    
+    template_path = os.path.join(template_location, template_name)
+    content = readFileWithCache(template_path)
+    if content:
+        _managerCache['template'][cache_key] = content
+    return content
+
+def getColorWithCache(color_value, color_type='hex'):
+    """Convert colors with caching"""
+    cache_key = (color_value, color_type)
+    if cache_key in _managerCache['color']:
+        return _managerCache['color'][cache_key]
+    
+    try:
+        if color_type == 'hex':
+            # Convert hex to RGB
+            color_value = color_value.lstrip('#')
+            result = tuple(int(color_value[i:i+2], 16)/255.0 for i in (0, 2, 4))
+        elif color_type == 'rgb':
+            # Convert RGB to hex
+            result = '#%02x%02x%02x' % tuple(int(c * 255) for c in color_value)
+        
+        _managerCache['color'][cache_key] = result
+        return result
+    except:
+        return None
 
 #----------------------------------------------------------------------------------------------------------
 
@@ -678,20 +684,18 @@ class HotboxManager(QtWidgets.QWidget):
             self.classesList.setEnabled(False)
 
         if self.contextual:
-
-            #sort items found on disk
-            allItems = sorted(os.listdir(self.path), key=lambda s: s.lower())
-            allItems = [folder for folder in allItems if os.path.isdir(self.path + '/' + folder) and folder[0] not in ['.','_']]
+            # Use cached directory listing
+            allItems = listDirWithCache(self.path)
+            allItems = [folder for folder in allItems if os.path.isdir(os.path.join(self.path, folder)) and folder[0] not in ['.','_']]
+            allItems.sort(key=lambda s: s.lower())
 
             #add items
             self.classesList.addItems(allItems)
 
         #add checkbox to item if in rule mode
         if self.mode == 'Rules':
-
             checkedStates = [QtCore.Qt.Unchecked, QtCore.Qt.Checked]
             for index in range(self.classesList.count()):
-
                 item = self.classesList.item(index)
                 itemText = item.text()
 
@@ -710,7 +714,6 @@ class HotboxManager(QtWidgets.QWidget):
 
         #restore selection
         if selectItem:
-
             #select based on string
             if isinstance(selectItem, str):
                 foundItems = self.classesList.findItems(selectItem, QtCore.Qt.MatchExactly)
@@ -719,10 +722,8 @@ class HotboxManager(QtWidgets.QWidget):
 
             #select based on index
             if isinstance(selectItem, bool):
-
                 allItems = self.classesList.count()-1
                 itemIndex = min(allItems,itemIndex)
-
                 self.classesList.setCurrentRow(itemIndex)
 
         #turn this variable back off
@@ -833,35 +834,27 @@ class HotboxManager(QtWidgets.QWidget):
         if not rule:
             itemsSelected = bool(self.hotboxItemsTree.selectedItems)
 
-
         if itemsSelected:
-
             if not rule:
                 self.selectedItem = self.hotboxItemsTree.selectedItems[0]
                 self.loadedScript = self.selectedItem.path
-
             #if rule mode
             else:
                 item = self.classesList.currentItem()
                 itemState = 1 - bool(item.checkState())
                 self.loadedScript = '/'.join([self.path, item.text() + '_' * itemState, '_rule.py'])
-                
 
             #if item (not submenu)
             if self.loadedScript.endswith('.py'):
-
                 self.enableScriptEditor()
 
                 if not rule:
-                    
-
-                    #set attributes
+                    #set attributes using cached file reading
                     name = getAttributeFromFile(self.loadedScript)
                     self.scriptEditorName.setText(name)
 
                     #make sure the colorswatches will remain disabled in template mode
                     if not self.exitTemplateModeButton.isVisible():
-
                         textColor = getAttributeFromFile(self.loadedScript, 'textColor')
                         self.colorSwatchText.setColor(textColor, adjustChild = False, indirect = True)
 
@@ -870,21 +863,18 @@ class HotboxManager(QtWidgets.QWidget):
 
                 #rule
                 else:
-
                     ignoreClasses = int(getAttributeFromFile(self.loadedScript, 'ignore classes'))
-
                     self.ignoreSave = True
                     self.rulesFlagCheckbox.setChecked(ignoreClasses)
                     self.ignoreSave = False
 
-                #set script
+                #set script using cached file reading
                 text = getScriptFromFile(self.loadedScript)
                 self.scriptEditorScript.setPlainText(text)
                 self.scriptEditorScript.updateSavedText()
 
             #if submenu
             else:
-
                 #set name
                 self.scriptEditorName.setText(open(self.loadedScript+'/_name.json').read())
                 self.enableScriptEditor(False, True)
@@ -1471,80 +1461,56 @@ class QListWidgetCustom(QtWidgets.QListWidget):
 #------------------------------------------------------------------------------------------------------
 
 class ColorSwatch(QtWidgets.QLabel):
+    '''
+    Custom QLabel to display a color.
+    '''
 
-    #signals
     save = QtCore.Signal()
 
-    def __init__(self, defaultColor):
+    def __init__(self, color):
         super(ColorSwatch, self).__init__()
 
-        self.color = None
+        self.setFixedWidth(20)
+        self.setFixedHeight(20)
 
-        self.enabled = False
-        self.active = False
-
-
+        self.setColor(color)
 
         self.child = None
-        self.parent = None
 
-        self.size = 12
-        self.setFixedHeight(self.size)
-        self.setFixedWidth(self.size)
-
-        self.painter = QtGui.QPainter()
-
-        #set line color to black
-        self.lineColor = '#000000'
-
-        #painter
-        self.paintPen = QtGui.QPen()
-        self.paintPen.setColor(QtGui.QColor(0,0,0))
-        self.paintPen.setWidthF(1.5)
-
-        self.defaultColor = defaultColor
-        self.defaultColorInverted = self.invertColor(self.defaultColor)
-        self.lockedColor = '#262626'
-
-        self.setColor(adjustChild = False, indirect = True)
-
-        #Tooltip
-        self.assignToolTip()
-
-    def assignToolTip(self, child = False):
+    def setColor(self, color, adjustChild = True, indirect = False):
         '''
-        Set the
+        Set color of the swatch.
         '''
-        childSpecificToolTip = ['','','']
+        if not indirect:
+            self.color = color
+            self.setStyleSheet('background:rgb(%d,%d,%d)'%(tuple([i*255 for i in getColorWithCache(color, 'hex')])))
 
-        if child:
-            childSpecificToolTip = ['text ',
-                                    " When set to default this color will adjust upon altering the button's color in order to remain readable."
-                                    " This behaviour can be turned off by disabling 'Auto adjust text color' in the preferences",
-                                    " Invert default color."]
+            if adjustChild and self.child != None:
+                self.child.setColor(self.getTextColor())
 
-        self.toolTipText = ("<p>Change the button's %scolor.</p>"
-                        "<p>/ indicates the color is set to default.%s</p>"
-                        "<ul>"
-                        "<li><b>LMB</b> Open color picker to set a custom color.</li>"
-                        "<li><b>RMB</b> Revert to default color.%s</li>"
-                        "<li><b>CTRL + LMB</b>  Paste color from clipboard.</li>"
-                        "<li><b>CTRL + RMB</b> Copy color to clipboard.</li>"
-                        "<li><b>SHIFT + LMB</b> Set to color of selected node.</li>"
-                        "<li><b>SHIFT + RMB</b> Copy color to clipboard, formatted as a 32bit integer.</li>"
-                        "</ul>"%(childSpecificToolTip[0],childSpecificToolTip[1],childSpecificToolTip[2])
-                        )
-
-        self.setToolTip(self.toolTipText)
-    #--------------------------------------------------------------------------------------------------
-    # Events
-    #--------------------------------------------------------------------------------------------------
-
-    def saveEvent(self):
+    def getTextColor(self):
         '''
-        Emit save signal that can be picked up by parent class
+        Calculate perceptive luminance of background color and return either black or white for optimal contrast.
         '''
-        self.save.emit()
+        rgb = getColorWithCache(self.color, 'hex')
+        luminance = (0.299*rgb[0] + 0.587*rgb[1] + 0.114*rgb[2])
+        return '#000000' if luminance > .5 else '#ffffff'
+
+    def mousePressEvent(self, event):
+        '''
+        When clicked, open color picker.
+        '''
+        if event.button() == QtCore.Qt.LeftButton:
+            self.openColorPicker()
+
+    def openColorPicker(self):
+        '''
+        Open color picker and update swatch.
+        '''
+        color = QtWidgets.QColorDialog.getColor()
+        if color.isValid():
+            self.setColor(getColorWithCache(tuple([i/255.0 for i in color.getRgb()[:3]]), 'rgb'))
+            self.save.emit()
 
     def enterEvent(self, event):
         '''
@@ -1562,59 +1528,6 @@ class ColorSwatch(QtWidgets.QLabel):
         '''
         if self.enabled:
             self.active = False
-        return False
-
-    def mouseReleaseEvent(self,event):
-        '''
-        Set the color of the button
-        '''
-        if self.enabled and self.active:
-
-            #Control key pressed
-            if QtWidgets.QApplication.keyboardModifiers() == QtCore.Qt.ShiftModifier:
-
-                #left click
-                if event.button() == QtCore.Qt.LeftButton:
-                    self.colorFromSelection()
-
-                #right click
-                else:
-                    self.copyColorInterface()
-
-            #Control key pressed
-            elif QtWidgets.QApplication.keyboardModifiers() == QtCore.Qt.ControlModifier:
-
-                #left click
-                if event.button() == QtCore.Qt.LeftButton:
-                    #paste color form clipboard
-                    self.pasteColorHex()
-
-                #right click
-                else:
-                    #copy color to clipboard
-                    self.copyColorHex()
-
-            #Control key not pressed
-            else:
-                #left click
-                if event.button() == QtCore.Qt.LeftButton:
-                    #set custom color
-                    self.getColor()
-
-                #right click
-                else:
-                    #set to default
-                    color = None
-
-                    #if already set to default, toggle between inverted and regular
-                    if self.parent:
-                        if self.color == self.defaultColor:
-                            color = self.defaultColorInverted
-
-                    self.setColor(color)
-
-            return True
-
         return False
 
     def dragEnterEvent(self, e):
@@ -1678,40 +1591,6 @@ class ColorSwatch(QtWidgets.QLabel):
             hexColor = W_hotbox.rgb2hex(rgbColor)
 
             self.setColor(hexColor)
-
-    def setColor(self, color = None, adjustChild = True, indirect = False):
-        '''
-        Set color of the swatch.
-        'Indirect' parameter reflects whether the method was called directly by the user, or as a side effect.
-        '''
-
-        colorChanged = False
-
-        #if swatch not enabled, set to locked color
-        if not self.enabled:
-            color = self.lockedColor
-
-        else:
-            #if no color specified, set to default color
-            if not color:
-                color = self.defaultColor
-
-            #if new color is the same as the current color
-            if color != self.color:
-                colorChanged = True
-
-        #set color
-        self.color = color
-        self.setStyleSheet('QLabel {border: 1px solid %s; background-color : %s}'%(self.lineColor, self.color))
-
-        #set child color. If the color of the child was changed, make sure the colorChanged variable is forced to True
-        if adjustChild:
-            colorChanged = bool(colorChanged + self.setChildColor())
-
-        #save changes to file if conditions are met.
-        if self.enabled and colorChanged and not indirect:
-            self.saveEvent()
-
 
     def setChildColor(self):
         '''
@@ -2571,155 +2450,51 @@ class ScriptEditorHighlighter(QtGui.QSyntaxHighlighter):
 #------------------------------------------------------------------------------------------------------
 
 class ScriptEditorTemplateMenu(QtWidgets.QMenu):
+    def __init__(self, parent = None):
+        super(ScriptEditorTemplateMenu, self).__init__(parent)
 
-    def __init__(self, parentObject):
+        self.parent = parent
+        self.templateLocation = parent.templateLocation
 
-        super(ScriptEditorTemplateMenu,self).__init__()
+        self.aboutToShow.connect(self.populateMenu)
 
-        self.hotbox = parentObject
-
-        #set default template folder
-        folder = preferencesNode.knob('hotboxLocation').value()
-        if folder[-1] != '/':
-            folder += '/'
-        self.templateFolder = folder + 'Templates'
-
-        self.initMenu()
-
-    def initMenu(self):
-
+    def populateMenu(self):
+        '''
+        Populate menu with items found in template folder
+        '''
         self.clear()
-        self.menuItems = []
 
-        #add menu entries pointing to templates stored on disk
-        self.addUserTemplates(folder = self.templateFolder)
+        # Use cached directory listing
+        templates = listDirWithCache(self.templateLocation)
+        templates = [t for t in templates if t.endswith('.py') and t[0] not in ['.','_']]
 
-        self.addSeparator()
+        if len(templates) > 0:
+            for template in sorted(templates):
+                templatePath = os.path.join(self.templateLocation, template)
+                templateData = loadTemplateFromFile(templatePath)
+                
+                if templateData:
+                    name = templateData['name'] or template
+                    action = QtWidgets.QAction(name, self)
+                    action.setData(templatePath)
+                    self.addAction(action)
 
-        #add function to manage templates
-        self.addQAction(self, 'Save current script as template', self.saveAsTemplate)
-        self.addQAction(self, 'Manage templates', self.hotbox.toggleTemplateMode)
+            self.addSeparator()
 
-    def addUserTemplates(self, folder, parent = None):
+        self.addAction('Save as template')
+
+    def mouseReleaseEvent(self, event):
         '''
-        Scan template folder and add an item for every template.
+        Handle template selection
         '''
-
-        if not parent:
-            parent = self
-
-        for path in [folder + '/' + file for file in os.listdir(folder) if file[0] not in ['_','.']]:
-
-            name = getAttributeFromFile(path)
-
-            #make sure name won't be longer than 'Save current script as template'
-            maxNameLength = 31
-
-            #file
-            if os.path.isfile(path):
-
-                #trim name if to long
-                if len(name) > maxNameLength:
-                    name = name[:maxNameLength - 3] + '...'
-
-                self.addQAction(parent,name,path)
-
-            #dir
+        action = self.activeAction()
+        if action != None:
+            if str(action.text()) == 'Save as template':
+                self.parent.saveTemplate()
             else:
+                self.parent.loadTemplate(action.data())
 
-                #trim name if to long
-                maxNameLength -= 3
-                if len(name) > maxNameLength:
-                    name = name[:maxNameLength - 3] + '...'
-
-                #create new QMenu
-                menu = QtWidgets.QMenu()
-                menu.setTitle(name)
-
-                #add QMenu to parent
-                parent.addMenu(menu)
-                self.menuItems.append(menu)
-
-                #Run this function again, with new Qmenu as menu
-                self.addUserTemplates(parent = menu, folder = path)
-
-    def addQAction(self, parent, name, function):
-        '''
-        Create new action and add to menu.
-        '''
-
-        #create new QAction
-        action = QAction(parent)
-        action.setText(name)
-
-        #bind function
-
-        #if a script is passed instead of a function, turn it into a function
-        if not callable(function):
-            script = function
-            function = lambda : self.insertTemplate(script)
-
-        action.triggered.connect(function)
-
-        #addToMenu
-        parent.addAction(action)
-        self.menuItems.append(action)
-
-    def insertTemplate(self, path):
-        '''
-        Insert template script into script editor
-        '''
-
-        #get script
-        template = getScriptFromFile(path)
-
-        #add proper indentation
-        template = self.adjustTemplate(template)
-
-        self.hotbox.scriptEditorScript.insertPlainText(template)
-
-    def saveAsTemplate(self):
-        '''
-        Save current script as a template
-        '''
-
-        self.hotbox.saveScriptEditor(True)
-
-    def adjustTemplate(self, script):
-        '''
-        Modify template script based on current cursor position
-        '''
-        cursor = self.hotbox.scriptEditorScript.textCursor()
-        cursorPosition = cursor.positionInBlock()
-
-        textBeforeCursor = cursor.block().text()[:cursorPosition]
-        textBeforeCursorNoIndent = textBeforeCursor.lstrip()
-
-        #if cursor at beginning of block, return original script
-        if textBeforeCursor == '':
-            return script
-
-        #find current indentation, rounded by 4
-        indentLevel = ' '* (4*((len(textBeforeCursor) - len(textBeforeCursorNoIndent))//4))
-
-        if textBeforeCursorNoIndent != '':
-            script = '\n' + script
-
-        script = script.replace('\n','\n'+indentLevel)
-
-        return script
-
-    def enableMenuItems(self):
-        '''
-        Enable items based on state of script editor.
-        '''
-
-        #check if script editor widget is accessible
-        mode = 1 - self.hotbox.scriptEditorScript.isReadOnly()
-
-        #skip last item (enter template mode)
-        for menuItem in self.menuItems[:-1]:
-            menuItem.setEnabled(mode)
+        super(ScriptEditorTemplateMenu, self).mouseReleaseEvent(event)
 
 #------------------------------------------------------------------------------------------------------
 #Tree View
@@ -3892,49 +3667,38 @@ def clearHotboxManager(sections = ['Single','Multiple','All','Rules']):
 #--------------------------------------------------------------------------------------------------
 
 
-def getAttributeFromFile(path, attribute = 'name'):
+def getAttributeFromFile(filePath, attribute = 'name'):
     '''
-    Scan file for the appropriate attribute.
-    By default attribute is name. If no attribute found, return None
+    Read attribute from file
     '''
+    content = readFileWithCache(filePath)
+    if not content:
+        return ''
 
+    tag = '# %s: '%attribute
+    for line in content.split('\n'):
+        if line.startswith(tag):
+            return line.split(tag)[-1]
+    return ''
 
-    if os.path.isfile(path):
-        tag = '# %s: '%attribute.upper()
-        for line in open(path).readlines():
-
-            if not line.startswith('#'):
-                break
-
-            if line.startswith(tag):
-                result = line.split(tag)[-1].replace('\n','')
-                return result
-
-    else:
-        if attribute == 'name':
-            nameFile = path +'/_name.json'
-            if os.path.isfile(nameFile):
-                result = open(nameFile).read()
-                return result
-
-    return None
-
-def getScriptFromFile(path):
+def getScriptFromFile(filePath):
     '''
-    Extract the appropriate fucntion from the file. If no name found, return None
+    Read script from file, excluding the header
     '''
-    if os.path.isfile(path):
+    content = readFileWithCache(filePath)
+    if not content:
+        return ''
 
-        openFile = open(path).readlines()
+    scriptContent = []
+    headerPassed = False
 
-        for index, line in enumerate(openFile):
+    for line in content.split('\n'):
+        if headerPassed:
+            scriptContent.append(line)
+        if line == '#----------------------------------------------------------------------------------------------------------':
+            headerPassed = True
 
-            if not line.startswith('#'):
-                script = ''.join(openFile[index+1:]).replace('\t',' '*4)
-
-                return script
-
-    return None
+    return '\n'.join(scriptContent)
 
 def getFirstAvailableFilePath(folder):
     '''
@@ -3947,6 +3711,24 @@ def getFirstAvailableFilePath(folder):
         newFileName = str(int(newFileName)+1).zfill(3)
 
     return folder + newFileName
+
+def loadTemplateFromFile(template_path):
+    """Load template with caching"""
+    content = readFileWithCache(template_path)
+    if not content:
+        return None
+        
+    try:
+        # Parse template content
+        template = {}
+        template['name'] = getAttributeFromFile(template_path)
+        template['color'] = getAttributeFromFile(template_path, 'color')
+        template['textColor'] = getAttributeFromFile(template_path, 'textColor')
+        template['script'] = getScriptFromFile(template_path)
+        
+        return template
+    except:
+        return None
 
 #--------------------------------------------------------------------------------------------------
 

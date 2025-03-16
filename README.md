@@ -1,6 +1,6 @@
-# W_hotbox for Nuke 16
+# W_hotbox for Nuke 16 - unofficial repo
 
-This is a modified version of Wouter Gilsing's W_hotbox for Nuke, updated to work with Nuke 16.
+This is a modified version of Wouter Gilsing's W_hotbox for Nuke, updated to work with Nuke 16. There's now an official 2.0 release on Nukepedia. 
 
 ## Features
 
@@ -43,4 +43,4 @@ For detailed installation instructions, see the `InstallationGuide.txt` file.
 
 ## License
 
-This project is licensed under the BSD 3-Clause License - see the LICENSE file for details. The original work was created by Wouter Gilsing, and this repository contains modifications for Nuke 16 compatibility by George Antonopoulos. 
+This project is licensed under the BSD 3-Clause License - see the LICENSE file for details. The original work was created by Wouter Gilsing,

@@ -42,7 +42,6 @@ import nuke
 
 #Choose between PySide, PySide2 and PySide6 based on Nuke version
 if nuke.NUKE_VERSION_MAJOR < 11:
-    PYSIDE = 1
     from PySide import QtCore, QtGui, QtGui as QtWidgets
     from PySide.QtCore import Qt
 elif nuke.NUKE_VERSION_MAJOR < 16:
@@ -88,10 +87,47 @@ operatingSystem = platform.system()
 #----------------------------------------------------------------------------------------------------------
 
 # Performance optimization caches
-_fileContentCache = {}
-_colorConversionCache = {}
-_classHierarchyCache = {}
-_ruleValidationCache = {}  # New cache for rule validation results
+class LRUCache:
+    """
+    Limited size cache that removes least recently used items when full.
+    Only used for non-critical caches to prevent memory bloat.
+    """
+    def __init__(self, max_size=1000):
+        self.cache = {}
+        self.max_size = max_size
+        self.access_order = []
+        
+    def __setitem__(self, key, value):
+        if key in self.cache:
+            self.access_order.remove(key)
+        elif len(self.cache) >= self.max_size:
+            oldest = self.access_order.pop(0)
+            del self.cache[oldest]
+        
+        self.cache[key] = value
+        self.access_order.append(key)
+        
+    def __getitem__(self, key):
+        if key in self.cache:
+            self.access_order.remove(key)
+            self.access_order.append(key)
+            return self.cache[key]
+        raise KeyError(key)
+        
+    def __contains__(self, key):
+        return key in self.cache
+        
+    def clear(self):
+        self.cache.clear()
+        self.access_order.clear()
+
+# Critical caches remain unbounded
+_fileContentCache = {}  # Critical for functionality
+_classHierarchyCache = {}  # Critical for node operations
+_ruleValidationCache = {}  # Critical for rules
+
+# Non-critical caches get size limits
+_colorConversionCache = LRUCache(max_size=1000)  # Color conversions can be recalculated if needed
 
 class Hotbox(QtWidgets.QWidget):
     '''
@@ -1531,6 +1567,7 @@ homeFolder = os.getenv('HOME').replace('\\','/') + '/.nuke'
 
 updatePreferences()
 addPreferences()
+preloadCriticalResources()  # Safe preloading of critical resources
 
 # Define global shortcut variable
 global shortcut
@@ -1637,3 +1674,34 @@ def getClassHierarchy(nodeClass):
     # Store result in cache
     _classHierarchyCache[nodeClass] = inheritance
     return inheritance
+
+def preloadCriticalResources():
+    """
+    Safely preload critical resources at startup.
+    Only loads small, frequently accessed files.
+    """
+    try:
+        # Get paths
+        hotboxLocation = preferencesNode.knob('hotboxLocation').value()
+        if not hotboxLocation:
+            return
+            
+        # Preload critical paths
+        criticalPaths = [
+            os.path.join(hotboxLocation, 'All'),
+            os.path.join(hotboxLocation, 'Single/No Selection'),
+        ]
+        
+        # Safely load contents
+        for path in criticalPaths:
+            if os.path.exists(path):
+                try:
+                    files = os.listdir(path)
+                    for f in files:
+                        if f.endswith('.py') and os.path.getsize(os.path.join(path, f)) < 10000:  # Only small files
+                            with open(os.path.join(path, f), 'r') as file:
+                                _fileContentCache[os.path.join(path, f)] = file.read()
+                except:
+                    continue
+    except:
+        pass  # Fail silently - preloading is optional optimization

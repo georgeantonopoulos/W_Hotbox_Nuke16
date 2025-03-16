@@ -72,15 +72,30 @@ else:
     
     # Create a wrapper class to maintain compatibility
     class QRegExpCompat:
-        # Class level cache to avoid recreating regex objects
-        _pattern_cache = {}
+        # Class level cache with size limit for regex patterns
+        _pattern_cache = LRUCache(max_size=500)
+        
+        @staticmethod
+        def validatePattern(pattern):
+            """Validate regex pattern before compilation"""
+            try:
+                QRegularExpression(pattern)
+                return True
+            except Exception as e:
+                nuke.tprint(f'Invalid regex pattern: {pattern} - {str(e)}')
+                return False
         
         def __init__(self, pattern):
             self.pattern = pattern
-            # Get precompiled regex from cache or create a new one
-            if pattern not in QRegExpCompat._pattern_cache:
-                QRegExpCompat._pattern_cache[pattern] = QRegularExpression(pattern)
-            self.regex = QRegExpCompat._pattern_cache[pattern]
+            # Validate pattern first
+            if not self.validatePattern(pattern):
+                self.regex = QRegularExpression('')  # Empty pattern as fallback
+            else:
+                # Get precompiled regex from cache or create new
+                if pattern not in self._pattern_cache:
+                    self._pattern_cache[pattern] = QRegularExpression(pattern)
+                self.regex = self._pattern_cache[pattern]
+            
             self.matches = None
             self.match_positions = {}
             self._last_text = None

@@ -1,15 +1,15 @@
 #----------------------------------------------------------------------------------------------------------
 # Wouter Gilsing
 # woutergilsing@hotmail.com
-version = '1.9'
-releaseDate = 'March 28 2021'
+version = '2.0'
+releaseDate = 'March 15 2025'
 
 #----------------------------------------------------------------------------------------------------------
 #LICENSE
 #----------------------------------------------------------------------------------------------------------
 
 '''
-Copyright (c) 2016-2021, Wouter Gilsing
+Copyright (c) 2016-2025, Wouter Gilsing
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -42,6 +42,7 @@ import nuke
 
 #Choose between PySide, PySide2 and PySide6 based on Nuke version
 if nuke.NUKE_VERSION_MAJOR < 11:
+    PYSIDE = 1
     from PySide import QtCore, QtGui, QtGui as QtWidgets
     from PySide.QtCore import Qt
 elif nuke.NUKE_VERSION_MAJOR < 16:

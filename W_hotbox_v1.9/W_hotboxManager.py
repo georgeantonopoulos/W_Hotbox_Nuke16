@@ -1,15 +1,15 @@
 #----------------------------------------------------------------------------------------------------------
 # Wouter Gilsing
 # woutergilsing@hotmail.com
-version = '1.9'
-releaseDate = 'March 28 2021'
+version = '2.0'
+releaseDate = 'March 15 2025'
 
 #----------------------------------------------------------------------------------------------------------
 #LICENSE
 #----------------------------------------------------------------------------------------------------------
 
 '''
-Copyright (c) 2016-2021, Wouter Gilsing
+Copyright (c) 2016-2025, Wouter Gilsing
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -40,19 +40,30 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import nuke
 
-#Choose between PySide, PySide2 and PySide6 based on Nuke version
+#----------------------------------------------------------------------------------------------------------
+
+#PySide
 if nuke.NUKE_VERSION_MAJOR < 11:
+    PYSIDE = 1
     from PySide import QtCore, QtGui, QtGui as QtWidgets
     from PySide.QtCore import Qt
     QAction = QtGui.QAction
     QRegExp = QtCore.QRegExp
+    QRegularExpression = QRegExp
+
+#PySide 2
 elif nuke.NUKE_VERSION_MAJOR < 16:
-    from PySide2 import QtWidgets, QtGui, QtCore
+    PYSIDE = 2
+    from PySide2 import QtGui, QtCore, QtWidgets
     from PySide2.QtCore import Qt
     QAction = QtWidgets.QAction
     QRegExp = QtCore.QRegExp
+    QRegularExpression = QRegExp
+
+#PySide 6
 else:
-    from PySide6 import QtWidgets, QtGui, QtCore
+    PYSIDE = 6
+    from PySide6 import QtGui, QtCore, QtWidgets
     from PySide6.QtCore import Qt
     QAction = QtGui.QAction
     
@@ -147,6 +158,8 @@ else:
             for flag in flags:
                 if not hasattr(Qt, flag):
                     setattr(Qt, flag, getattr(enum_obj, flag))
+
+# ... existing code ...
 
 import os
 import shutil

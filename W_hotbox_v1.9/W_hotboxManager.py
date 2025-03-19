@@ -72,8 +72,9 @@ else:
     
     # Create a wrapper class to maintain compatibility
     class QRegExpCompat:
-        # Class level cache with size limit for regex patterns
-        _pattern_cache = LRUCache(max_size=500)
+        # Class level cache with a simple dict for compatibility
+        _pattern_cache = {}
+        _max_patterns = 500  # Limit for older Python versions
         
         @staticmethod
         def validatePattern(pattern):
@@ -82,9 +83,10 @@ else:
                 QRegularExpression(pattern)
                 return True
             except Exception as e:
-                nuke.tprint(f'Invalid regex pattern: {pattern} - {str(e)}')
+                # Use old-style string formatting for compatibility
+                nuke.tprint('Invalid regex pattern: %s - %s' % (pattern, str(e)))
                 return False
-        
+            
         def __init__(self, pattern):
             self.pattern = pattern
             # Validate pattern first
@@ -92,9 +94,17 @@ else:
                 self.regex = QRegularExpression('')  # Empty pattern as fallback
             else:
                 # Get precompiled regex from cache or create new
-                if pattern not in self._pattern_cache:
-                    self._pattern_cache[pattern] = QRegularExpression(pattern)
-                self.regex = self._pattern_cache[pattern]
+                if pattern not in QRegExpCompat._pattern_cache:
+                    # Check cache size and clear oldest items if needed
+                    if len(QRegExpCompat._pattern_cache) >= QRegExpCompat._max_patterns:
+                        # Simple approach - just clear half the cache
+                        # This is less efficient than LRU but more compatible
+                        keys_to_remove = list(QRegExpCompat._pattern_cache.keys())[:QRegExpCompat._max_patterns//2]
+                        for key in keys_to_remove:
+                            del QRegExpCompat._pattern_cache[key]
+                    
+                    QRegExpCompat._pattern_cache[pattern] = QRegularExpression(pattern)
+                self.regex = QRegExpCompat._pattern_cache[pattern]
             
             self.matches = None
             self.match_positions = {}
@@ -189,6 +199,7 @@ from datetime import datetime as dt
 from webbrowser import open as openURL
 
 import W_hotbox
+from W_hotbox import LRUCache  # Import LRUCache from W_hotbox
 
 preferencesNode = nuke.toNode('preferences')
 
@@ -612,7 +623,7 @@ class HotboxManager(QtWidgets.QWidget):
             else:
                 screenRes = QtWidgets.QDesktopWidget().screenGeometry()
         except Exception as e:
-            print(f"Error getting screen geometry: {e}")
+            print("Error getting screen geometry: %s" % e)
             # Use default values if all fails
             screenRes = QtCore.QRect(0, 0, 1920, 1080)
             
@@ -1513,7 +1524,9 @@ class ColorSwatch(QtWidgets.QLabel):
             self.color = color
             self.setStyleSheet('background:rgb(%d,%d,%d)'%(tuple([i*255 for i in getColorWithCache(color, 'hex')])))
 
-            if adjustChild and self.child != None:
+            # Check if the child attribute exists and then check if it's not None
+            # This provides better backward compatibility with different Nuke versions
+            if adjustChild and hasattr(self, 'child') and self.child is not None:
                 self.child.setColor(self.getTextColor())
 
     def getTextColor(self):
@@ -1626,14 +1639,14 @@ class ColorSwatch(QtWidgets.QLabel):
         '''
 
         #check if its relevant to compare colors
-        if not self.child or not preferencesNode.knob('hotboxAutoTextColor').value():
+        if not hasattr(self, 'child') or self.child is None or not preferencesNode.knob('hotboxAutoTextColor').value():
             return False
 
-        if not self.isNonDefault(True) and self.child.isNonDefault():
+        if not self.isNonDefault(True) and hasattr(self.child, 'isNonDefault') and self.child.isNonDefault():
             return False
 
         #if self is default, and child is default
-        if not self.isNonDefault(True) and not self.child.isNonDefault():
+        if not self.isNonDefault(True) and hasattr(self.child, 'isNonDefault') and not self.child.isNonDefault():
             self.child.setColor(indirect = True)
             return True
 
@@ -1642,9 +1655,12 @@ class ColorSwatch(QtWidgets.QLabel):
         hsvParentColor = colorsys.rgb_to_hsv(rgbParentColor[0],rgbParentColor[1],rgbParentColor[2])
 
         #child color
-        childColor = self.child.color
-        rgbChildColor =  W_hotbox.hex2rgb(childColor)
-        hsvChildColor = list(colorsys.rgb_to_hsv(rgbChildColor[0],rgbChildColor[1],rgbChildColor[2]))
+        if hasattr(self, 'child') and self.child is not None and hasattr(self.child, 'color'):
+            childColor = self.child.color
+            rgbChildColor = W_hotbox.hex2rgb(childColor)
+            hsvChildColor = list(colorsys.rgb_to_hsv(rgbChildColor[0],rgbChildColor[1],rgbChildColor[2]))
+        else:
+            return False
 
         #check if diffenence is significant enough to be readable
         threshold = 255/2
@@ -1668,7 +1684,7 @@ class ColorSwatch(QtWidgets.QLabel):
 
         if not ignoreInverted:
             #if set to inverted default
-            if self.parent:
+            if hasattr(self, 'parent') and self.parent:
                 if self.color == self.defaultColorInverted:
                     return None
 
@@ -1682,12 +1698,21 @@ class ColorSwatch(QtWidgets.QLabel):
 
     def setChild(self, child):
         '''
-
+        Set a child ColorSwatch that will be updated when this swatch changes
         '''
-        if isinstance(child, ColorSwatch):
-            self.child = child
-            self.child.parent = self
-            self.child.assignToolTip(True)
+        try:
+            if isinstance(child, ColorSwatch):
+                self.child = child
+                # Safely set parent attribute on child
+                if hasattr(child, 'parent'):
+                    child.parent = self
+                # Safely call assignToolTip if it exists
+                if hasattr(child, 'assignToolTip'):
+                    child.assignToolTip(True)
+        except Exception as e:
+            # Safely handle any errors in child setup
+            print("Warning: Error setting ColorSwatch child: %s" % str(e))
+            pass
 
     #--------------------------------------------------------------------------------------------------
     #Copy/Paste
@@ -3288,7 +3313,7 @@ class RenameDialog(QtWidgets.QDialog):
             else:
                 screenRes = QtWidgets.QDesktopWidget().screenGeometry()
         except Exception as e:
-            print(f"Error getting screen geometry: {e}")
+            print("Error getting screen geometry: %s" % e)
             # Use default values if all fails
             screenRes = QtCore.QRect(0, 0, 1920, 1080)
             
@@ -3425,7 +3450,7 @@ class AboutDialog(QtWidgets.QFrame):
             else:
                 screenRes = QtWidgets.QDesktopWidget().screenGeometry()
         except Exception as e:
-            print(f"Error getting screen geometry: {e}")
+            print("Error getting screen geometry: %s" % e)
             # Use default values if all fails
             screenRes = QtCore.QRect(0, 0, 1920, 1080)
             
@@ -3794,6 +3819,6 @@ def getScreenGeometry():
         else:
             return QtWidgets.QDesktopWidget().screenGeometry()
     except Exception as e:
-        print(f"Error getting screen geometry: {e}")
+        print("Error getting screen geometry: %s" % e)
         # Return a sensible default if all methods fail
         return QtCore.QRect(0, 0, 1920, 1080)

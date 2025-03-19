@@ -42,6 +42,44 @@ import nuke
 
 #----------------------------------------------------------------------------------------------------------
 
+#----------------------------------------------------------------------------------------------------------
+# Simple cache implementation for backward compatibility 
+#----------------------------------------------------------------------------------------------------------
+
+class SimpleCache(dict):
+    """
+    Simplified cache for older Python versions.
+    Just a dictionary with a size limit.
+    """
+    def __init__(self, max_size=1000):
+        self.max_size = max_size
+        self.keys_order = []
+        super(SimpleCache, self).__init__()
+        
+    def __setitem__(self, key, value):
+        if key in self:
+            # Remove from keys_order to update position
+            self.keys_order.remove(key)
+        elif len(self) >= self.max_size:
+            # Remove oldest item
+            oldest = self.keys_order.pop(0)
+            super(SimpleCache, self).__delitem__(oldest)
+            
+        # Add to keys_order and dictionary
+        self.keys_order.append(key)
+        super(SimpleCache, self).__setitem__(key, value)
+        
+    def __getitem__(self, key):
+        if key in self:
+            # Update position in keys_order
+            self.keys_order.remove(key)
+            self.keys_order.append(key)
+        return super(SimpleCache, self).__getitem__(key)
+        
+    def clear(self):
+        self.keys_order = []
+        super(SimpleCache, self).clear()
+
 #PySide
 if nuke.NUKE_VERSION_MAJOR < 11:
     PYSIDE = 1
@@ -70,40 +108,7 @@ else:
     # In PySide6, QRegExp is replaced by QRegularExpression
     from PySide6.QtCore import QRegularExpression
     
-    # Simple cache implementation for backward compatibility
-    class SimpleCache(dict):
-        """
-        Simplified cache for older Python versions.
-        Just a dictionary with a size limit.
-        """
-        def __init__(self, max_size=1000):
-            self.max_size = max_size
-            self.keys_order = []
-            super(SimpleCache, self).__init__()
-            
-        def __setitem__(self, key, value):
-            if key in self:
-                # Remove from keys_order to update position
-                self.keys_order.remove(key)
-            elif len(self) >= self.max_size:
-                # Remove oldest item
-                oldest = self.keys_order.pop(0)
-                super(SimpleCache, self).__delitem__(oldest)
-                
-            # Add to keys_order and dictionary
-            self.keys_order.append(key)
-            super(SimpleCache, self).__setitem__(key, value)
-            
-        def __getitem__(self, key):
-            if key in self:
-                # Update position in keys_order
-                self.keys_order.remove(key)
-                self.keys_order.append(key)
-            return super(SimpleCache, self).__getitem__(key)
-            
-        def clear(self):
-            self.keys_order = []
-            super(SimpleCache, self).clear()
+    # Remove SimpleCache class definition from here since it's now defined globally above
     
     # Create a wrapper class to maintain compatibility
     class QRegExpCompat:
@@ -3849,4 +3854,3 @@ def getScreenGeometry():
         print("Error getting screen geometry: %s" % e)
         # Return a sensible default if all methods fail
         return QtCore.QRect(0, 0, 1920, 1080)
-

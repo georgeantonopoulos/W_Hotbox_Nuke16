@@ -70,11 +70,45 @@ else:
     # In PySide6, QRegExp is replaced by QRegularExpression
     from PySide6.QtCore import QRegularExpression
     
+    # Simple cache implementation for backward compatibility
+    class SimpleCache(dict):
+        """
+        Simplified cache for older Python versions.
+        Just a dictionary with a size limit.
+        """
+        def __init__(self, max_size=1000):
+            self.max_size = max_size
+            self.keys_order = []
+            super(SimpleCache, self).__init__()
+            
+        def __setitem__(self, key, value):
+            if key in self:
+                # Remove from keys_order to update position
+                self.keys_order.remove(key)
+            elif len(self) >= self.max_size:
+                # Remove oldest item
+                oldest = self.keys_order.pop(0)
+                super(SimpleCache, self).__delitem__(oldest)
+                
+            # Add to keys_order and dictionary
+            self.keys_order.append(key)
+            super(SimpleCache, self).__setitem__(key, value)
+            
+        def __getitem__(self, key):
+            if key in self:
+                # Update position in keys_order
+                self.keys_order.remove(key)
+                self.keys_order.append(key)
+            return super(SimpleCache, self).__getitem__(key)
+            
+        def clear(self):
+            self.keys_order = []
+            super(SimpleCache, self).clear()
+    
     # Create a wrapper class to maintain compatibility
     class QRegExpCompat:
-        # Class level cache with a simple dict for compatibility
-        _pattern_cache = {}
-        _max_patterns = 500  # Limit for older Python versions
+        # Use SimpleCache instead of attempting to import LRUCache
+        _pattern_cache = SimpleCache(max_size=500)
         
         @staticmethod
         def validatePattern(pattern):
@@ -95,14 +129,6 @@ else:
             else:
                 # Get precompiled regex from cache or create new
                 if pattern not in QRegExpCompat._pattern_cache:
-                    # Check cache size and clear oldest items if needed
-                    if len(QRegExpCompat._pattern_cache) >= QRegExpCompat._max_patterns:
-                        # Simple approach - just clear half the cache
-                        # This is less efficient than LRU but more compatible
-                        keys_to_remove = list(QRegExpCompat._pattern_cache.keys())[:QRegExpCompat._max_patterns//2]
-                        for key in keys_to_remove:
-                            del QRegExpCompat._pattern_cache[key]
-                    
                     QRegExpCompat._pattern_cache[pattern] = QRegularExpression(pattern)
                 self.regex = QRegExpCompat._pattern_cache[pattern]
             
@@ -199,18 +225,19 @@ from datetime import datetime as dt
 from webbrowser import open as openURL
 
 import W_hotbox
-from W_hotbox import LRUCache  # Import LRUCache from W_hotbox
+# Remove the problematic import
+# from W_hotbox import LRUCache  # Import LRUCache from W_hotbox
 
 preferencesNode = nuke.toNode('preferences')
 
 #----------------------------------------------------------------------------------------------------------
 # Performance optimization caches
 _managerCache = {
-    'file_content': {},  # Cache file contents
-    'dir_listing': {},   # Cache directory listings
-    'regex': {},         # Cache compiled regex patterns
-    'color': {},         # Cache color conversions
-    'template': {}       # Cache template contents
+    'file_content': SimpleCache(max_size=500),  # Cache file contents
+    'dir_listing': SimpleCache(max_size=200),   # Cache directory listings
+    'regex': SimpleCache(max_size=100),         # Cache compiled regex patterns
+    'color': SimpleCache(max_size=300),         # Cache color conversions
+    'template': SimpleCache(max_size=50)       # Cache template contents
 }
 
 def clearManagerCache(cache_type=None):
@@ -3822,3 +3849,4 @@ def getScreenGeometry():
         print("Error getting screen geometry: %s" % e)
         # Return a sensible default if all methods fail
         return QtCore.QRect(0, 0, 1920, 1080)
+

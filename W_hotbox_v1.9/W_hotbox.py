@@ -129,6 +129,37 @@ _ruleValidationCache = {}  # Critical for rules
 # Non-critical caches get size limits
 _colorConversionCache = LRUCache(max_size=1000)  # Color conversions can be recalculated if needed
 
+def preloadCriticalResources():
+    """
+    Safely preload critical resources at startup.
+    Only loads small, frequently accessed files.
+    """
+    try:
+        # Get paths
+        hotboxLocation = preferencesNode.knob('hotboxLocation').value()
+        if not hotboxLocation:
+            return
+            
+        # Preload critical paths
+        criticalPaths = [
+            os.path.join(hotboxLocation, 'All'),
+            os.path.join(hotboxLocation, 'Single/No Selection'),
+        ]
+        
+        # Safely load contents
+        for path in criticalPaths:
+            if os.path.exists(path):
+                try:
+                    files = os.listdir(path)
+                    for f in files:
+                        if f.endswith('.py') and os.path.getsize(os.path.join(path, f)) < 10000:  # Only small files
+                            with open(os.path.join(path, f), 'r') as file:
+                                _fileContentCache[os.path.join(path, f)] = file.read()
+                except:
+                    continue
+    except:
+        pass  # Fail silently - preloading is optional optimization
+
 class Hotbox(QtWidgets.QWidget):
     '''
     The main class for the hotbox
@@ -1674,34 +1705,3 @@ def getClassHierarchy(nodeClass):
     # Store result in cache
     _classHierarchyCache[nodeClass] = inheritance
     return inheritance
-
-def preloadCriticalResources():
-    """
-    Safely preload critical resources at startup.
-    Only loads small, frequently accessed files.
-    """
-    try:
-        # Get paths
-        hotboxLocation = preferencesNode.knob('hotboxLocation').value()
-        if not hotboxLocation:
-            return
-            
-        # Preload critical paths
-        criticalPaths = [
-            os.path.join(hotboxLocation, 'All'),
-            os.path.join(hotboxLocation, 'Single/No Selection'),
-        ]
-        
-        # Safely load contents
-        for path in criticalPaths:
-            if os.path.exists(path):
-                try:
-                    files = os.listdir(path)
-                    for f in files:
-                        if f.endswith('.py') and os.path.getsize(os.path.join(path, f)) < 10000:  # Only small files
-                            with open(os.path.join(path, f), 'r') as file:
-                                _fileContentCache[os.path.join(path, f)] = file.read()
-                except:
-                    continue
-    except:
-        pass  # Fail silently - preloading is optional optimization
